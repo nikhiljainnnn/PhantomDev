@@ -1,0 +1,171 @@
+# ══════════════════════════════════════════════════════════════════
+#  PhantomDev .gitignore
+# ══════════════════════════════════════════════════════════════════
+
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.virtualenv/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ── Environment & Secrets ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+.secrets/
+
+# ── FastAPI / Uvicorn ─────────────────────────────────────────────
+*.log
+logs/
+*.pid
+
+# ── Node / Vite / React ───────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.cache/
+frontend/coverage/
+*.tsbuildinfo
+.npm
+.yarn/
+.pnp.*
+
+# ── Testing & Coverage ───────────────────────────────────────────
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+nosetests.xml
+test-results/
+junit.xml
+*.cover
+
+# ── Type checking & linting ───────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyright/
+pyrightconfig.json
+
+# ── Runtime directories (auto-created on startup) ─────────────────
+workspace/*
+!workspace/.gitkeep
+sandbox/*
+!sandbox/.gitkeep
+data/chroma/*
+!data/chroma/.gitkeep
+
+# Agent file-state bridge
+workspace/.state/
+
+# Generated code artifacts written by agents
+workspace/generated/
+workspace/repos/
+
+# ── AI / ML artifacts ─────────────────────────────────────────────
+# Ollama model weights
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+models/
+# Sentence-transformers cache
+.cache/
+sentence_transformers/
+# ChromaDB on-disk data (persisted at runtime)
+data/chroma/
+chroma_db/
+chromadb/
+
+# ── Docker ────────────────────────────────────────────────────────
+.dockerignore
+docker-compose.override.yml
+*.tar
+
+# ── Bandit / Safety reports ───────────────────────────────────────
+bandit-report.json
+safety-report.json
+.bandit
+
+# ── LangSmith / Observability ─────────────────────────────────────
+langchain_cache/
+.langchain/
+.langsmith/
+
+# ── IDE ───────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+*.code-workspace
+
+# ── OS ────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ── Miscellaneous ─────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp
+*.orig
+*.rej
+*.patch
+.hypothesis/
+profile_output/
