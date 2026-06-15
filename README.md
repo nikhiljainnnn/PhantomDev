@@ -35,9 +35,9 @@ API Gateway (FastAPI)
 Human Review Gate ──► Merge / Reject
 ```
 
-## Tech Stack (Zero Cost)
+## Tech Stack
 - **Orchestration**: AutoGen 0.4 (GroupChat)
-- **LLM**: Ollama + Qwen2.5-Coder:7b (local, FREE)
+- **LLM**: Ollama + Qwen2.5-Coder:7b (local)
 - **Codebase RAG**: ChromaDB + sentence-transformers
 - **API**: FastAPI + WebSockets (real-time logs)
 - **Code Execution**: Docker sandbox (subprocess)
