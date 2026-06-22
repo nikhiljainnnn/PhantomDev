@@ -1,0 +1,70 @@
+# ── Python ────────────────────────────────────────────────────────
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Node / Frontend ───────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/coverage/
+frontend/.vite/
+frontend/.cache/
+
+# ── Secrets & Environment ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# ── Logs & Reports ────────────────────────────────────────────────
+*.log
+logs/
+bandit-report.json
+safety-report.json
+.bandit
+
+# ── Runtime / Data directories (generated at startup) ─────────────
+workspace/
+sandbox/
+data/
+.state/
+
+# ── ML / AI artifacts ─────────────────────────────────────────────
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+.cache/
+sentence_transformers/
+
+# ── Test & Coverage output ────────────────────────────────────────
+htmlcov/
+.coverage
+coverage.xml
+coverage.json
+junit.xml
+
+# ── IDE & OS ──────────────────────────────────────────────────────
+.git/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Docs (not needed in the image) ───────────────────────────────
+*.md
+docs/

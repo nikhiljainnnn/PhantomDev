@@ -22,6 +22,9 @@ from api.models import CreateTaskRequest, TaskResponse
 from api.store import task_store
 from orchestrator.state import TaskState, TaskStatus
 
+from api.routes.github import router as github_router
+from api.routes.webhook import router as webhook_router
+
 # ── Structured JSON logging ────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -74,6 +77,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+app.include_router(github_router, prefix="/api")
+app.include_router(webhook_router, prefix="/api")
 
 # ── Prometheus metrics ─────────────────────────────────────────────────────────
 try:

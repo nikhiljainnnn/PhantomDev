@@ -119,7 +119,6 @@ chroma_db/
 chromadb/
 
 # ── Docker ────────────────────────────────────────────────────────
-.dockerignore
 docker-compose.override.yml
 *.tar
 

@@ -332,6 +332,7 @@ function AgentMessage({ msg, idx }) {
 function TaskCreationForm({ onCreated }) {
   const [form, setForm] = useState({ title: "", body: "", issue_number: "", repo: "", base_branch: "main" });
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const [error, setError] = useState("");
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -376,6 +377,27 @@ function TaskCreationForm({ onCreated }) {
     fontFamily: "Inter, sans-serif",
   };
 
+  const fetchIssue = async () => {
+    if (!form.repo || !form.issue_number) {
+      setError("Provide both owner/repo and issue # to fetch from GitHub.");
+      return;
+    }
+    setFetching(true); setError("");
+    try {
+      const res = await fetch(`${API}/github/issue?repo=${form.repo}&issue_number=${form.issue_number}`);
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.detail || `Error ${res.status}`);
+      }
+      const data = await res.json();
+      setForm(f => ({ ...f, title: data.title, body: data.body }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setFetching(false);
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <input placeholder="Feature / Bug title *" value={form.title} onChange={e => set("title", e.target.value)}
@@ -383,10 +405,16 @@ function TaskCreationForm({ onCreated }) {
       <textarea placeholder="Describe the task in detail…" value={form.body} onChange={e => set("body", e.target.value)}
         rows={3} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
       <div style={{ display: "flex", gap: 8 }}>
-        <input placeholder="Issue #" value={form.issue_number} onChange={e => set("issue_number", e.target.value)}
-          style={{ ...inputStyle, width: "40%" }} type="number" />
         <input placeholder="owner/repo" value={form.repo} onChange={e => set("repo", e.target.value)}
-          style={{ ...inputStyle, width: "60%" }} />
+          style={{ ...inputStyle, flex: 2 }} />
+        <input placeholder="Issue #" value={form.issue_number} onChange={e => set("issue_number", e.target.value)}
+          style={{ ...inputStyle, flex: 1 }} type="number" />
+        <button 
+          onClick={fetchIssue} 
+          disabled={fetching || !form.repo || !form.issue_number}
+          style={{ ...inputStyle, flex: 1, cursor: "pointer", background: C.surfaceMid, fontWeight: 600, color: C.primary, padding: "0 12px" }}>
+          {fetching ? "..." : "Fetch"}
+        </button>
       </div>
       <input placeholder="Base branch (default: main)" value={form.base_branch} onChange={e => set("base_branch", e.target.value)}
         style={inputStyle} />
