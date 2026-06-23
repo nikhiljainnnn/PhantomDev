@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: phantomdev-config
+  namespace: phantomdev
+data:
+  # LLM Configuration
+  OLLAMA_MODEL: "qwen2.5-coder:7b"
+  OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+
+  # Application
+  USE_CELERY: "true"
+  MIN_COVERAGE: "70"
+  MAX_ENGINEERS: "3"
+  AGENT_TIMEOUT: "180"
+  MAX_ROUNDS: "40"
+  ALLOWED_ORIGINS: "*"
+
+  # Paths (inside container)
+  WORKSPACE_DIR: "/app/workspace"
+  SANDBOX_DIR: "/app/sandbox"
+  CHROMA_PERSIST_DIR: "/app/data/chroma"
+
+  # Redis URL (points to Redis service)
+  REDIS_URL: "redis://phantomdev-redis:6379/0"
+
+  # Observability
+  LANGCHAIN_TRACING_V2: "false"
+  LANGCHAIN_PROJECT: "phantomdev"

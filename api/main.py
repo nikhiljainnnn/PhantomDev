@@ -50,6 +50,113 @@ async def verify_api_key(key: Optional[str] = Depends(api_key_header)) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
+# ── GitHub PR helpers ──────────────────────────────────────────────────────────
+
+def _merge_github_pr(state: TaskState) -> tuple[bool, Optional[str]]:
+    """
+    Squash-merge the GitHub PR associated with this task.
+    Returns (success: bool, error_message: str | None)
+    """
+    token     = os.getenv("GITHUB_TOKEN", "")
+    repo_name = state.target_repo
+    pr_number = state.pr_number
+
+    if not token or not repo_name or not pr_number:
+        return False, "GitHub not configured (missing TOKEN, repo, or PR number)"
+
+    try:
+        from github import Github, GithubException
+        g    = Github(token)
+        repo = g.get_repo(repo_name)
+        pr   = repo.get_pull(pr_number)
+
+        if not pr.mergeable:
+            return False, "PR has conflicts or failing checks — merge it manually on GitHub"
+
+        pr.merge(
+            commit_title=f"[PhantomDev] {state.github_issue_title}",
+            commit_message=(
+                f"Auto-merged by PhantomDev after human approval.\n\n"
+                f"Task ID: {state.task_id}\n"
+                f"Coverage: {state.metrics.coverage_pct:.0f}%\n"
+                f"Security HIGH findings: {state.metrics.security_high_count}"
+            ),
+            merge_method="squash",
+        )
+        logger.info(f"PR #{pr_number} merged on GitHub: {repo_name}")
+
+        # Comment on the original issue
+        if state.github_issue_number:
+            try:
+                issue = repo.get_issue(state.github_issue_number)
+                issue.create_comment(
+                    f"✅ PhantomDev PR #{pr_number} has been approved and merged!\n\n"
+                    f"Coverage: `{state.metrics.coverage_pct:.0f}%` | "
+                    f"Security HIGH: `{state.metrics.security_high_count}`"
+                )
+            except Exception:
+                pass  # Issue comment failing shouldn't block approval
+
+        return True, None
+
+    except Exception as e:
+        try:
+            from github import GithubException
+            msg = e.data.get("message", str(e)) if isinstance(e, GithubException) and hasattr(e, "data") else str(e)
+        except ImportError:
+            msg = str(e)
+        logger.error(f"GitHub merge failed: {msg}")
+        return False, msg
+
+
+def _close_github_pr(state: TaskState, reason: str) -> tuple[bool, Optional[str]]:
+    """
+    Close the GitHub PR with a rejection comment.
+    Returns (success: bool, error_message: str | None)
+    """
+    token     = os.getenv("GITHUB_TOKEN", "")
+    repo_name = state.target_repo
+    pr_number = state.pr_number
+
+    if not token or not repo_name or not pr_number:
+        return False, "GitHub not configured (missing TOKEN, repo, or PR number)"
+
+    try:
+        from github import Github
+        g    = Github(token)
+        repo = g.get_repo(repo_name)
+        pr   = repo.get_pull(pr_number)
+
+        # Post rejection comment first
+        pr.create_issue_comment(
+            f"❌ **PhantomDev PR Rejected**\n\n"
+            f"**Reason:** {reason or 'No reason provided'}\n\n"
+            f"This PR was closed by the human reviewer via PhantomDev dashboard."
+        )
+
+        # Close the PR
+        pr.edit(state="closed")
+        logger.info(f"PR #{pr_number} closed on GitHub: {repo_name}")
+
+        # Comment on the original issue
+        if state.github_issue_number:
+            try:
+                issue = repo.get_issue(state.github_issue_number)
+                issue.create_comment(
+                    f"❌ PhantomDev PR #{pr_number} was rejected and closed.\n\n"
+                    f"**Reason:** {reason or 'No reason provided'}"
+                )
+            except Exception:
+                pass
+
+        return True, None
+
+    except Exception as e:
+        msg = str(e)
+        logger.error(f"GitHub close failed: {msg}")
+        return False, msg
+
+
 # ── Lifespan: connect Redis on startup, close on shutdown ─────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -78,8 +185,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(github_router, prefix="/api")
-app.include_router(webhook_router, prefix="/api")
+app.include_router(github_router)
+app.include_router(webhook_router)
 
 # ── Prometheus metrics ─────────────────────────────────────────────────────────
 try:
@@ -115,6 +222,7 @@ async def health():
         "ollama_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         "model": os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
         "version": "2.0.0",
+        "github_configured": bool(os.getenv("GITHUB_TOKEN")),
     }
 
 
@@ -144,7 +252,6 @@ async def create_task(request: CreateTaskRequest, background_tasks: BackgroundTa
 @app.get("/tasks", dependencies=[Depends(verify_api_key)])
 async def list_tasks():
     tasks = await task_store.list_all()
-    # Sync any file-state updates back into Redis (orchestrator writes files from thread context)
     result = []
     for t in tasks:
         fresh = await _get_fresh_state(t.task_id) or t
@@ -185,11 +292,28 @@ async def approve_pr(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     if state.status != TaskStatus.PR_OPEN:
         raise HTTPException(status_code=400, detail=f"Task status is {state.status}, expected pr_open")
+
+    # ── Attempt real GitHub merge ─────────────────────────────────────────────
+    merged, merge_error = _merge_github_pr(state)
+
+    # ── Update state ──────────────────────────────────────────────────────────
     state.set_status(TaskStatus.APPROVED)
-    state.add_message("Human", "✅ PR approved")
+    if merged:
+        state.add_message("Human", f"✅ PR #{state.pr_number} approved and merged on GitHub")
+    elif merge_error and "not configured" not in merge_error:
+        state.add_message("Human", f"✅ PR approved in dashboard\n⚠️ GitHub merge: {merge_error}")
+    else:
+        state.add_message("Human", "✅ PR approved")
+
     await task_store.save(state)
     await _broadcast(task_id, state)
-    return {"message": "PR approved", "pr_url": state.pr_url}
+
+    return {
+        "message": "PR approved",
+        "github_merged": merged,
+        "merge_error": merge_error,
+        "pr_url": state.pr_url,
+    }
 
 
 @app.post("/tasks/{task_id}/reject", dependencies=[Depends(verify_api_key)])
@@ -197,11 +321,29 @@ async def reject_pr(task_id: str, reason: str = ""):
     state = await task_store.get(task_id)
     if not state:
         raise HTTPException(status_code=404, detail="Task not found")
+    if state.status not in (TaskStatus.PR_OPEN, TaskStatus.APPROVED):
+        raise HTTPException(status_code=400, detail=f"Task status is {state.status}")
+
+    # ── Attempt real GitHub close ─────────────────────────────────────────────
+    closed, close_error = _close_github_pr(state, reason)
+
+    # ── Update state ──────────────────────────────────────────────────────────
     state.set_status(TaskStatus.REJECTED)
-    state.add_message("Human", f"❌ PR rejected: {reason}")
+    if closed:
+        state.add_message("Human", f"❌ PR #{state.pr_number} rejected and closed on GitHub\nReason: {reason}")
+    elif close_error and "not configured" not in close_error:
+        state.add_message("Human", f"❌ PR rejected in dashboard\n⚠️ GitHub close: {close_error}\nReason: {reason}")
+    else:
+        state.add_message("Human", f"❌ PR rejected\nReason: {reason}")
+
     await task_store.save(state)
     await _broadcast(task_id, state)
-    return {"message": "PR rejected"}
+
+    return {
+        "message": "PR rejected",
+        "github_closed": closed,
+        "close_error": close_error,
+    }
 
 
 @app.post("/webhook/github")
@@ -234,7 +376,6 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
     await websocket.accept()
     websocket_connections.setdefault(task_id, []).append(websocket)
 
-    # Send all existing messages immediately on connect
     state = await task_store.get(task_id)
     if state:
         for msg in state.agent_messages:
@@ -249,7 +390,6 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
         while True:
             await asyncio.sleep(1)
 
-            # Poll Redis for new messages — works for BOTH Celery and BackgroundTasks paths
             fresh = await task_store.get(task_id)
             if fresh and len(fresh.agent_messages) > last_msg_count:
                 new_msgs = fresh.agent_messages[last_msg_count:]
@@ -264,7 +404,6 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
                         break
                 last_msg_count = len(fresh.agent_messages)
 
-            # Heartbeat ping to detect dead connections
             try:
                 await websocket.send_json({"type": "ping"})
             except Exception:
@@ -290,20 +429,13 @@ async def _run_pipeline_bg(task_id: str) -> None:
         await _broadcast(task_id, s)
 
     final_state = await PhantomDevOrchestrator(on_update=on_update).run(state)
-    # Always persist final state to Redis — the orchestrator thread may have failed
-    # to call on_update reliably from inside run_in_executor
     if final_state:
         await task_store.save(final_state)
         logger.info("Task %s final state saved to Redis: %s", task_id, final_state.status)
 
 
-# ── File-state bridge: sync orchestrator file writes back to Redis ─────────────
+# ── File-state bridge ──────────────────────────────────────────────────────────
 async def _get_fresh_state(task_id: str) -> Optional[TaskState]:
-    """
-    The orchestrator writes state to workspace/.state/{task_id}.json after every
-    agent turn (sync, works from thread context). Redis may lag behind.
-    This helper reads the file, updates Redis if file is newer, returns freshest state.
-    """
     redis_state = await task_store.get(task_id)
 
     try:
@@ -313,7 +445,6 @@ async def _get_fresh_state(task_id: str) -> Optional[TaskState]:
             redis_state is None or
             file_state.updated_at > redis_state.updated_at
         ):
-            # File is newer — sync back to Redis and return file state
             await task_store.save(file_state)
             return file_state
     except Exception as e:

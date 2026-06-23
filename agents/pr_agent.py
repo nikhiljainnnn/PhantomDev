@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import autogen
 from pathlib import Path
 
 from agents.base_agent import PhantomBaseAgent, WORKSPACE
@@ -32,18 +33,27 @@ Available tool:
 """
 
 
-def build_pr_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
-    agent = PhantomBaseAgent(
+def build_pr_agent(llm_config: dict, state: TaskState) -> autogen.ConversableAgent:
+    agent = autogen.ConversableAgent(
         name="PRAgent",
-        system_message=PR_SYSTEM_PROMPT,
-        llm_config=llm_config,
-        state=state,
+        system_message="You are the PR Agent.",
+        llm_config=False,  # Disable LLM entirely for this deterministic step
+        human_input_mode="NEVER",
     )
 
-    agent.register_function(function_map={
-        "create_pull_request": lambda: _create_pr(state),
-    })
+    def generate_pr_reply(agent, messages, sender, config):
+        import json
+        result_json = _create_pr(state)
+        res = json.loads(result_json)
+        
+        if res.get("status") in ("success", "dry_run"):
+            url = res.get("pr_url")
+            msg = f"```json\n{result_json}\n```\n\nHUMAN_APPROVAL_REQUIRED: PR is ready for review at {url}"
+            return True, msg
+        else:
+            return True, f"PHANTOMDEV_FAILED: PR creation failed: {res.get('message')}"
 
+    agent.register_reply([autogen.Agent, None], generate_pr_reply, position=0)
     return agent
 
 
@@ -54,9 +64,13 @@ def _create_pr(state: TaskState) -> str:
     """
     import json
     token = os.getenv("GITHUB_TOKEN", "")
-    repo_name = os.getenv("TARGET_REPO", state.target_repo)
+    repo_name = state.target_repo or os.getenv("TARGET_REPO", "")
 
-    if not token or not repo_name or repo_name == "your_username/your_repo":
+    # Ignore the default .env placeholder
+    if repo_name == "your_username/your_repo":
+        repo_name = ""
+
+    if not token or not repo_name:
         # Dry-run mode — no GitHub token configured
         dry_run_summary = _dry_run_summary(state)
         state.pr_url = "http://localhost:3000/dry-run"

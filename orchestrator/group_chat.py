@@ -18,6 +18,23 @@ import autogen
 from autogen import GroupChat, GroupChatManager
 import asyncio
 
+import openai
+from langsmith import wrappers
+
+# Monkey-patch OpenAI clients to enable LangSmith tracing automatically
+# for any clients created internally by AutoGen.
+_orig_sync_init = openai.OpenAI.__init__
+def _patched_sync_init(self, *args, **kwargs):
+    _orig_sync_init(self, *args, **kwargs)
+    wrappers.wrap_openai(self)
+openai.OpenAI.__init__ = _patched_sync_init
+
+_orig_async_init = openai.AsyncOpenAI.__init__
+def _patched_async_init(self, *args, **kwargs):
+    _orig_async_init(self, *args, **kwargs)
+    wrappers.wrap_openai(self)
+openai.AsyncOpenAI.__init__ = _patched_async_init
+
 from orchestrator.state import TaskState, TaskStatus
 from agents.pm_agent import build_pm_agent
 from agents.architect_agent import build_architect_agent
@@ -35,12 +52,17 @@ STATE_DIR = Path(os.getenv("WORKSPACE_DIR", "./workspace")) / ".state"
 
 
 def get_llm_config() -> dict:
-    groq_key = os.getenv("GROQ_API_KEY", "")
-    
+    # Priority: Groq → OpenAI → Ollama
+    groq_key   = os.getenv("GROQ_API_KEY", "")
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+
     if groq_key:
+        logger.info("Using Groq: llama-3.3-70b-versatile")
         return {
             "config_list": [{
-                "model": "llama-3.1-70b-versatile",
+                "model": "llama-3.3-70b-versatile",
                 "api_key": groq_key,
                 "base_url": "https://api.groq.com/openai/v1",
             }],
@@ -48,12 +70,24 @@ def get_llm_config() -> dict:
             "timeout": 60,
             "cache_seed": None,
         }
-    
-    # Fall back to local Ollama for development
+
+    if openai_key:
+        logger.info("Using OpenAI: gpt-4o-mini")
+        return {
+            "config_list": [{
+                "model": "gpt-4o-mini",
+                "api_key": openai_key,
+            }],
+            "temperature": 0.1,
+            "timeout": 60,
+            "cache_seed": None,
+        }
+
+    logger.info(f"Using Ollama: {ollama_model}")
     return {
         "config_list": [{
-            "model": os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
-            "base_url": f"{os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')}/v1",
+            "model": ollama_model,
+            "base_url": f"{ollama_url}/v1",
             "api_key": "ollama",
         }],
         "temperature": 0.1,

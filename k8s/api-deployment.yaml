@@ -1,0 +1,115 @@
+---
+# PersistentVolumeClaim — shared workspace between API and Worker pods
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-pvc
+  namespace: phantomdev
+spec:
+  accessModes:
+    - ReadWriteMany   # Multiple pods can read/write simultaneously
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# ChromaDB PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chroma-pvc
+  namespace: phantomdev
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 3Gi
+
+---
+# API Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phantomdev-api
+  namespace: phantomdev
+  labels:
+    app: phantomdev-api
+    version: "2.0.0"
+spec:
+  replicas: 2          # Start with 2 replicas
+  selector:
+    matchLabels:
+      app: phantomdev-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Allow 1 extra pod during update
+      maxUnavailable: 0  # Never have less than desired replicas (zero downtime)
+  template:
+    metadata:
+      labels:
+        app: phantomdev-api
+        version: "2.0.0"
+    spec:
+      containers:
+        - name: api
+          image: phantomdev:latest
+          imagePullPolicy: IfNotPresent   # Use local image (k3d imported)
+          command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: phantomdev-config
+            - secretRef:
+                name: phantomdev-secrets
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          volumeMounts:
+            - name: workspace
+              mountPath: /app/workspace
+            - name: chroma
+              mountPath: /app/data/chroma
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: workspace-pvc
+        - name: chroma
+          persistentVolumeClaim:
+            claimName: chroma-pvc
+
+---
+# API Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: phantomdev-api
+  namespace: phantomdev
+spec:
+  selector:
+    app: phantomdev-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
