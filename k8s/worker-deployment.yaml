@@ -1,7 +1,6 @@
 ---
 # Celery Worker Deployment
 # Workers pick up pipeline tasks from Redis queue
-# Scale this up when you have many concurrent pipeline requests
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,7 +9,7 @@ metadata:
   labels:
     app: phantomdev-worker
 spec:
-  replicas: 2          # Start with 2 workers = 2 concurrent pipelines
+  replicas: 1          # RWO PVCs (workspace/chroma) can only be mounted by 1 pod at a time
   selector:
     matchLabels:
       app: phantomdev-worker
@@ -19,6 +18,8 @@ spec:
       labels:
         app: phantomdev-worker
     spec:
+      # Give running pipeline tasks time to finish before pod is killed
+      terminationGracePeriodSeconds: 120
       containers:
         - name: worker
           image: phantomdev:latest
@@ -42,7 +43,7 @@ spec:
               memory: "512Mi"
               cpu: "250m"
             limits:
-              memory: "2Gi"      # Pipelines can use more memory
+              memory: "2Gi"
               cpu: "1000m"
           volumeMounts:
             - name: workspace
@@ -59,6 +60,7 @@ spec:
                 - ping
             initialDelaySeconds: 30
             periodSeconds: 60
+            timeoutSeconds: 15    # 'celery inspect ping' is slow — must exceed default 1s
             failureThreshold: 3
       volumes:
         - name: workspace

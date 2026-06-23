@@ -122,6 +122,10 @@ chromadb/
 docker-compose.override.yml
 *.tar
 
+# ── Kubernetes ────────────────────────────────────────────────────
+# Never commit secrets — use kubectl create secret or sealed-secrets
+k8s/secrets.yaml
+
 # ── Bandit / Safety reports ───────────────────────────────────────
 bandit-report.json
 safety-report.json

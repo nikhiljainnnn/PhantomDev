@@ -7,7 +7,7 @@ metadata:
   namespace: phantomdev
 spec:
   accessModes:
-    - ReadWriteMany   # Multiple pods can read/write simultaneously
+    - ReadWriteOnce   # local-path provisioner only supports RWO
   resources:
     requests:
       storage: 5Gi
@@ -21,7 +21,7 @@ metadata:
   namespace: phantomdev
 spec:
   accessModes:
-    - ReadWriteMany
+    - ReadWriteOnce   # local-path provisioner only supports RWO
   resources:
     requests:
       storage: 3Gi
@@ -37,7 +37,7 @@ metadata:
     app: phantomdev-api
     version: "2.0.0"
 spec:
-  replicas: 2          # Start with 2 replicas
+  replicas: 1          # RWO volumes can only be mounted by one pod at a time
   selector:
     matchLabels:
       app: phantomdev-api

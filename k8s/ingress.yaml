@@ -103,6 +103,7 @@ spec:
         # Copy built frontend into the nginx volume on startup
         - name: copy-frontend
           image: phantomdev:latest
+          imagePullPolicy: IfNotPresent   # Use local image — phantomdev is not on Docker Hub
           command: ["cp", "-r", "/app/frontend/dist/.", "/html/"]
           volumeMounts:
             - name: frontend

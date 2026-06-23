@@ -16,6 +16,9 @@ RUN npm run build
 # Stage 3: Production runtime
 FROM python:3.11-slim AS runtime
 WORKDIR /app
+# Ensure all local packages (orchestrator, agents, api, worker) are importable
+# by every process including Celery ForkPoolWorker subprocesses
+ENV PYTHONPATH=/app
 RUN apt-get update && apt-get install -y --no-install-recommends git curl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /install /usr/local
 COPY --from=frontend-builder /app/dist /app/frontend/dist

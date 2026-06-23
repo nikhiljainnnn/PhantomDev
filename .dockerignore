@@ -68,3 +68,13 @@ Thumbs.db
 # ── Docs (not needed in the image) ───────────────────────────────
 *.md
 docs/
+
+# ── Kubernetes & Infra configs (not needed inside the image) ─────
+k8s/
+docker-compose*.yml
+*.tar
+
+# ── LangSmith / Observability cache ──────────────────────────────
+langchain_cache/
+.langchain/
+.langsmith/
