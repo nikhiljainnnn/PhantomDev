@@ -1,9 +1,9 @@
 """
 orchestrator/group_chat.py
-──────────────────────────
-AutoGen GroupChat. Uses a simple sync file-based state bridge
-to work reliably on Windows Python 3.10 where asyncio event
-loop is not accessible from thread executor context.
+
+Runs the AutoGen GroupChat pipeline. Uses a file-based state bridge
+so state updates work reliably on Windows where asyncio event loop
+access from thread executor context is restricted.
 """
 from __future__ import annotations
 
@@ -21,8 +21,7 @@ import asyncio
 import openai
 from langsmith import wrappers
 
-# Monkey-patch OpenAI clients to enable LangSmith tracing automatically
-# for any clients created internally by AutoGen.
+# Patch OpenAI clients so LangSmith tracing picks up AutoGen calls automatically.
 _orig_sync_init = openai.OpenAI.__init__
 def _patched_sync_init(self, *args, **kwargs):
     _orig_sync_init(self, *args, **kwargs)
@@ -46,13 +45,13 @@ from agents.pr_agent import build_pr_agent
 
 logger = logging.getLogger(__name__)
 
-# Directory where live task state JSON is written after each agent turn
-# Frontend polls this via GET /tasks/{id} which reads from here
+# Live task state is written here after each agent turn.
+# The frontend polls GET /tasks/{id}, which reads from this directory.
 STATE_DIR = Path(os.getenv("WORKSPACE_DIR", "./workspace")) / ".state"
 
 
 def get_llm_config() -> dict:
-    # Priority: Groq → OpenAI → Ollama
+    # Priority order: Groq → OpenAI → Ollama (local)
     groq_key   = os.getenv("GROQ_API_KEY", "")
     openai_key = os.getenv("OPENAI_API_KEY", "")
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -103,6 +102,7 @@ def is_termination_msg(msg: dict) -> bool:
     ])
 
 
+# Fixed agent execution order — no LLM decides who speaks next.
 AGENT_ORDER = [
     "PMAgent", "ArchitectAgent",
     "EngineerAgent_0", "EngineerAgent_1", "EngineerAgent_2",
@@ -120,13 +120,12 @@ def custom_speaker_selection(last_speaker, groupchat):
 def _save_state_sync(state: TaskState) -> None:
     """
     Write task state to a JSON file synchronously.
-    Called from thread context — no asyncio needed.
-    The API's GET /tasks/{id} endpoint reads this file.
+    Safe to call from any thread context — no asyncio dependency.
+    Uses an atomic write (temp file + rename) to avoid partial reads.
     """
     try:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         path = STATE_DIR / f"{state.task_id}.json"
-        # Atomic write: write to temp then rename
         tmp = path.with_suffix(".tmp")
         tmp.write_text(state.model_dump_json(), encoding="utf-8")
         tmp.replace(path)
@@ -135,7 +134,7 @@ def _save_state_sync(state: TaskState) -> None:
 
 
 def load_state_from_file(task_id: str) -> Optional[TaskState]:
-    """Load task state from file. Called by API to get fresh state."""
+    """Load task state from the file-based store. Used by the API to get the freshest state."""
     try:
         path = STATE_DIR / f"{task_id}.json"
         if path.exists():
@@ -153,13 +152,12 @@ class PhantomDevOrchestrator:
 
     def _fire_update(self, state: TaskState) -> None:
         """
-        Save state synchronously (always works from any thread).
-        Also tries the async callback if one was provided.
+        Persist state after each agent turn.
+        File save always runs (works from any thread).
+        The async callback is attempted if an event loop is available.
         """
-        # Always save to file — this is what the frontend polls
         _save_state_sync(state)
 
-        # Try async callback (works when running in async context)
         if self._on_update_cb is not None:
             try:
                 import inspect
@@ -170,7 +168,7 @@ class PhantomDevOrchestrator:
                             self._on_update_cb(state), loop
                         )
                     except RuntimeError:
-                        pass  # No running loop — fine, file save covers us
+                        pass  # no running loop — file save is sufficient
                 else:
                     self._on_update_cb(state)
             except Exception as e:
@@ -199,7 +197,6 @@ class PhantomDevOrchestrator:
                 qa_agent, security_agent, writer_agent, pr_agent,
             ]
 
-            # Wrap every agent to capture replies and save state after each turn
             for ag in all_agents:
                 self._wrap_agent(ag, state)
 
@@ -257,14 +254,13 @@ class PhantomDevOrchestrator:
         return state
 
     def _wrap_agent(self, agent, state: TaskState) -> None:
-        """Intercept every agent reply → add to messages → save state."""
+        """Intercept every agent reply, add it to the message log, and persist state."""
         original = agent.generate_reply
         orchestrator = self
 
         def wrapped(messages=None, sender=None, **kwargs):
             reply = original(messages=messages, sender=sender, **kwargs)
             if reply and isinstance(reply, str) and reply.strip():
-                # Avoid duplicate messages
                 last = state.agent_messages[-1] if state.agent_messages else {}
                 if last.get("content") != reply or last.get("agent") != agent.name:
                     state.add_message(agent.name, reply[:3000])

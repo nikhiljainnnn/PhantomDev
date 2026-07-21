@@ -1,8 +1,8 @@
 """
 agents/security_agent.py
-────────────────────────
-Security Agent: runs Bandit (SAST) + Safety (dep vulns) on generated code.
-Blocks PR creation if HIGH severity findings exist.
+
+Security Agent. Runs Bandit (SAST) and Safety (dependency vulnerability check)
+on all generated code. Blocks PR creation if any HIGH severity findings exist.
 """
 from __future__ import annotations
 
@@ -20,13 +20,13 @@ logger = logging.getLogger(__name__)
 SECURITY_SYSTEM_PROMPT = """
 You are the Security Agent in PhantomDev.
 
-YOUR JOB:
-1. Call run_bandit() to perform SAST on all generated Python files.
+Your job:
+1. Call run_bandit() to run a SAST scan on all generated Python files.
 2. Call run_safety() to check for vulnerable dependencies.
-3. Report all findings categorised by severity (HIGH / MEDIUM / LOW).
-4. Block the pipeline if any HIGH severity issues exist.
+3. Report all findings grouped by severity (HIGH / MEDIUM / LOW).
+4. Block the pipeline if any HIGH severity issues are found.
 
-OUTPUT FORMAT:
+Output format:
 ## Security Report
 
 ### SAST (Bandit) Findings

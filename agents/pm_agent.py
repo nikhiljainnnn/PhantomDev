@@ -1,9 +1,9 @@
 """
 agents/pm_agent.py
-──────────────────
-Product Manager Agent.
-Receives a GitHub Issue → produces structured requirements + subtask list.
-Writes results directly into the shared TaskState.
+
+Product Manager Agent. Takes a GitHub Issue and produces a structured
+requirements breakdown with subtasks for the engineering agents to pick up.
+Results are written directly into the shared TaskState.
 """
 from __future__ import annotations
 
@@ -22,14 +22,12 @@ logger = logging.getLogger(__name__)
 PM_SYSTEM_PROMPT = """
 You are the Product Manager Agent in PhantomDev, an autonomous software engineering team.
 
-YOUR JOB:
-1. Read the GitHub issue carefully.
-2. Extract clear, unambiguous REQUIREMENTS (functional + non-functional).
-3. Write specific ACCEPTANCE CRITERIA (testable, measurable).
-4. Decompose the work into SUBTASKS — one subtask = one file to create or modify.
-4. Output a JSON block that the system will parse.
+Read the GitHub issue and produce:
+1. A list of clear, unambiguous requirements (functional and non-functional).
+2. Specific, testable acceptance criteria.
+3. A breakdown of work into subtasks — one subtask = one file to create or modify.
 
-OUTPUT FORMAT (always end your response with this exact JSON block):
+End your response with a JSON block in exactly this shape:
 
 ```json
 {
@@ -56,11 +54,11 @@ OUTPUT FORMAT (always end your response with this exact JSON block):
 }
 ```
 
-RULES:
-- One subtask per file. Never group multiple files into one subtask.
-- file_path must be relative (e.g. app/api/users.py, not /home/user/...)
-- Each subtask description must be self-contained (the engineer should not need to read other subtasks)
-- After outputting the JSON, say: "PMAgent done. ArchitectAgent, please proceed."
+Rules:
+- One subtask per file — never group multiple files into one subtask.
+- file_path must be relative (e.g. app/api/users.py).
+- Each subtask description must be self-contained.
+- After the JSON, say: "PMAgent done. ArchitectAgent, please proceed."
 """
 
 
@@ -72,7 +70,7 @@ def build_pm_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
         state=state,
     )
 
-    # Hook into the reply pipeline to parse and persist outputs
+    # Intercept replies to parse the JSON block and persist into TaskState
     original_generate = agent.generate_reply
 
     def generate_with_persistence(messages=None, sender=None, **kwargs):

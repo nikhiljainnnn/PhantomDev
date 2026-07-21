@@ -1,8 +1,9 @@
 """
 agents/base_agent.py
-────────────────────
+
 Base class for all PhantomDev agents.
-Provides: ChromaDB RAG, file workspace, structured logging, state access.
+Provides ChromaDB RAG search, workspace file I/O, and structured logging
+wired into the shared TaskState.
 """
 from __future__ import annotations
 

@@ -1,20 +1,18 @@
 """
 agents/qa_agent.py
-──────────────────
-QA Agent: runs pytest on generated tests with intelligent sandbox selection.
 
-Execution priority:
-  1. Kubernetes Job (highest isolation — used when running inside K8s)
-  2. Docker container (medium isolation — used when Docker CLI is available)
-  3. Direct subprocess (fallback — dev mode only, logs a warning)
+QA Agent — runs pytest against generated code with sandbox isolation.
 
-Security model:
-  - Network: DISABLED in all sandbox modes (no exfiltration)
-  - Secrets: NEVER passed to sandbox (env vars not forwarded)
-  - Workspace: read-write (pytest-cov needs to write coverage files)
-  - Memory: limited to 512MB
-  - CPU: limited to 0.5 cores
-  - Timeout: 120 seconds max
+Execution order:
+  1. Kubernetes Job   (when running inside a cluster)
+  2. Docker container (when Docker CLI is available)
+  3. Direct subprocess (dev fallback — logs a warning)
+
+Security constraints applied in all sandbox modes:
+  - Network access disabled
+  - Secrets not forwarded to sandbox
+  - Workspace mounted read-write (pytest-cov needs to write .coverage files)
+  - Memory capped at 512 MB, CPU at 0.5 cores, timeout 120 s
 """
 from __future__ import annotations
 
@@ -40,13 +38,13 @@ SANDBOX_TIMEOUT = int(os.getenv("SANDBOX_TIMEOUT", 120))
 QA_SYSTEM_PROMPT = """
 You are the QA Agent in PhantomDev.
 
-YOUR JOB:
+Your responsibilities:
 1. Call run_tests() to execute all pytest tests in the workspace.
 2. Analyse the results.
-3. If coverage < {min_coverage}%, identify which files lack tests and instruct engineers to add more.
+3. If coverage < {min_coverage}%, identify which files are under-tested and flag them for the engineers.
 4. If all tests pass and coverage >= {min_coverage}%, declare success.
 
-OUTPUT FORMAT:
+Output format:
 ## QA Report
 - Tests run: X
 - Tests passed: X
@@ -65,15 +63,11 @@ Available tool:
 """
 
 
-# ── Environment detection ─────────────────────────────────────────────────────
-
 def _is_kubernetes() -> bool:
-    """Detect if we are running inside a Kubernetes pod."""
     return Path("/var/run/secrets/kubernetes.io/serviceaccount/token").exists()
 
 
 def _is_docker_available() -> bool:
-    """Detect if Docker CLI is available."""
     return shutil.which("docker") is not None
 
 
@@ -85,20 +79,17 @@ def _get_execution_mode() -> str:
     return "direct"
 
 
-# ── Kubernetes Job execution ──────────────────────────────────────────────────
-
 def _run_tests_kubernetes(workspace: str) -> dict:
     """
-    Run pytest inside a Kubernetes Job.
-    Uses the in-cluster K8s API directly via requests — no extra deps needed.
-    Network is isolated at the pod level via NetworkPolicy (if configured).
-    Secrets are NOT forwarded to the Job pod.
+    Run pytest inside a Kubernetes Job using the in-cluster API.
+    No extra dependencies needed beyond requests.
+    Network isolation is enforced at the pod level via NetworkPolicy.
+    Secrets are not forwarded to the Job pod.
     """
     import requests as req
     from requests.packages.urllib3.exceptions import InsecureRequestWarning
     req.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-    # Read in-cluster credentials
     token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
     ns_path    = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
@@ -108,9 +99,7 @@ def _run_tests_kubernetes(workspace: str) -> dict:
     headers   = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     job_name = f"pytest-{uuid.uuid4().hex[:8]}"
-    
-    # Extract the relative workspace path from /app/workspace 
-    # to mount only this task's directory into the sandbox at /code
+
     try:
         rel_workspace = os.path.relpath(workspace, "/app/workspace")
     except ValueError:
@@ -125,12 +114,12 @@ def _run_tests_kubernetes(workspace: str) -> dict:
             "labels": {"app": "phantomdev-pytest", "managed-by": "qa-agent"},
         },
         "spec": {
-            "ttlSecondsAfterFinished": 60,  # auto-cleanup after 60s
-            "backoffLimit": 0,              # no retries
+            "ttlSecondsAfterFinished": 60,
+            "backoffLimit": 0,
             "template": {
                 "spec": {
                     "restartPolicy": "Never",
-                    "automountServiceAccountToken": False,  # no K8s API access from test pod
+                    "automountServiceAccountToken": False,
                     "containers": [{
                         "name": "pytest",
                         "image": "python:3.11-slim",
@@ -153,9 +142,7 @@ def _run_tests_kubernetes(workspace: str) -> dict:
                             "name": "workspace",
                             "mountPath": "/code",
                             "subPath": rel_workspace
-                            # read-write so pytest-cov can write coverage files
                         }],
-                        # CRITICAL: no env vars forwarded — secrets stay out
                         "env": [],
                     }],
                     "volumes": [{
@@ -168,7 +155,6 @@ def _run_tests_kubernetes(workspace: str) -> dict:
     }
 
     try:
-        # Create Job
         resp = req.post(
             f"{api_url}/apis/batch/v1/namespaces/{namespace}/jobs",
             headers=headers, json=job_manifest, verify=False, timeout=10
@@ -176,14 +162,12 @@ def _run_tests_kubernetes(workspace: str) -> dict:
         resp.raise_for_status()
         logger.info(f"K8s pytest Job created: {job_name}")
 
-        # Poll until Job completes (max SANDBOX_TIMEOUT seconds)
         deadline = time.time() + SANDBOX_TIMEOUT
         pod_name = None
 
         while time.time() < deadline:
             time.sleep(3)
 
-            # Get Job status
             job_resp = req.get(
                 f"{api_url}/apis/batch/v1/namespaces/{namespace}/jobs/{job_name}",
                 headers=headers, verify=False, timeout=10
@@ -194,7 +178,6 @@ def _run_tests_kubernetes(workspace: str) -> dict:
             if status.get("succeeded", 0) > 0 or status.get("failed", 0) > 0:
                 break
 
-            # Find associated Pod
             if not pod_name:
                 pods_resp = req.get(
                     f"{api_url}/api/v1/namespaces/{namespace}/pods",
@@ -206,7 +189,6 @@ def _run_tests_kubernetes(workspace: str) -> dict:
                 if items:
                     pod_name = items[0]["metadata"]["name"]
 
-        # Fetch logs
         logs = ""
         if pod_name:
             log_resp = req.get(
@@ -215,7 +197,6 @@ def _run_tests_kubernetes(workspace: str) -> dict:
             )
             logs = log_resp.text
 
-        # Delete Job (cleanup)
         req.delete(
             f"{api_url}/apis/batch/v1/namespaces/{namespace}/jobs/{job_name}",
             headers=headers,
@@ -231,13 +212,11 @@ def _run_tests_kubernetes(workspace: str) -> dict:
         return {"status": "error", "message": str(e), "stdout": "", "passed": 0, "failed": 0, "total": 0, "coverage": 0.0}
 
 
-# ── Docker execution ──────────────────────────────────────────────────────────
-
 def _run_tests_docker(workspace: str) -> dict:
     """
     Run pytest inside a Docker container.
-    --network none prevents all external calls.
-    Secrets are NOT passed via -e flags.
+    --network none blocks all external traffic.
+    No secrets are passed via -e flags.
     """
     image     = "python:3.11-slim"
     container = f"phantomdev-pytest-{uuid.uuid4().hex[:8]}"
@@ -246,13 +225,12 @@ def _run_tests_docker(workspace: str) -> dict:
         "docker", "run",
         "--rm",
         "--name", container,
-        "--network", "none",           # no internet access
-        "--memory", "512m",            # RAM limit
-        "--cpus", "0.5",              # CPU limit
-        "--tmpfs", "/tmp:size=100m",   # temp space
-        "-v", f"{workspace}:/code",   # mount workspace (rw for coverage)
+        "--network", "none",
+        "--memory", "512m",
+        "--cpus", "0.5",
+        "--tmpfs", "/tmp:size=100m",
+        "-v", f"{workspace}:/code",
         "--workdir", "/code",
-        # CRITICAL: no -e flags — secrets stay out of container
         image,
         "sh", "-c",
         (
@@ -282,12 +260,10 @@ def _run_tests_docker(workspace: str) -> dict:
         return {"status": "error", "message": str(e), "stdout": "", "passed": 0, "failed": 0, "total": 0, "coverage": 0.0}
 
 
-# ── Direct execution (fallback) ───────────────────────────────────────────────
-
 def _run_tests_direct(workspace: str) -> dict:
     """
-    Direct subprocess execution — fallback for local dev.
-    WARNING: No isolation. Only use in trusted dev environments.
+    Direct subprocess fallback for local dev.
+    No isolation — only use in trusted environments.
     """
     logger.warning(
         "⚠️  Running tests WITHOUT sandbox isolation (dev mode). "
@@ -322,8 +298,6 @@ def _run_tests_direct(workspace: str) -> dict:
         return {"status": "error", "message": str(e), "passed": 0, "failed": 0, "total": 0, "coverage": 0.0}
 
 
-# ── Output parser (shared by all modes) ──────────────────────────────────────
-
 def _parse_pytest_output(output: str, workspace: str) -> dict:
     """Parse pytest stdout and coverage.json into a structured result dict."""
     passed = failed = total = 0
@@ -338,7 +312,6 @@ def _parse_pytest_output(output: str, workspace: str) -> dict:
 
     total = passed + failed
 
-    # Try to read coverage from file first (more accurate)
     coverage_pct = 0.0
     coverage_file = Path(workspace) / "coverage.json"
     if coverage_file.exists():
@@ -348,7 +321,6 @@ def _parse_pytest_output(output: str, workspace: str) -> dict:
         except Exception:
             pass
 
-    # Fallback: parse from output
     if coverage_pct == 0.0:
         cov_match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", output)
         if cov_match:
@@ -369,12 +341,10 @@ def _parse_pytest_output(output: str, workspace: str) -> dict:
     }
 
 
-# ── Main entry point ──────────────────────────────────────────────────────────
-
 def run_tests() -> str:
     """
-    Auto-detect best available execution method and run pytest.
-    Returns JSON string with results.
+    Detect the best available execution method and run pytest.
+    Returns a JSON string with the results.
     """
     from agents.base_agent import WORKSPACE
     workspace = str(WORKSPACE)
@@ -400,8 +370,6 @@ def run_tests() -> str:
     return json.dumps(result)
 
 
-# ── Agent builder ─────────────────────────────────────────────────────────────
-
 def build_qa_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
     agent = PhantomBaseAgent(
         name="QAAgent",
@@ -419,7 +387,7 @@ def build_qa_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
 
 
 def _run_and_persist(state: TaskState) -> str:
-    """Run tests and write results into TaskState."""
+    """Run tests and write results back into TaskState."""
     result_str = run_tests()
     result     = json.loads(result_str)
 

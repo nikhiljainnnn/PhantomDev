@@ -1,8 +1,8 @@
 """
 orchestrator/state.py
-─────────────────────
-Central state machine for a PhantomDev task.
-All agents read from and write to this shared object.
+
+Shared state machine for a PhantomDev task.
+All agents read from and write to this object as it moves through the pipeline.
 """
 from __future__ import annotations
 

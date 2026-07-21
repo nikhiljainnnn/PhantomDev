@@ -1,9 +1,9 @@
 """
 agents/engineer_agent.py
-────────────────────────
-Engineer Agents: take individual subtasks and generate production code.
-Multiple instances run in round-robin via AutoGen GroupChat.
-Each engineer claims a subtask, generates code + unit tests, writes to workspace.
+
+Engineer Agents. Each one claims a subtask from the PM's list, generates
+production code and unit tests, and writes both to the workspace.
+Multiple instances run sequentially in the AutoGen GroupChat.
 """
 from __future__ import annotations
 
@@ -19,24 +19,23 @@ logger = logging.getLogger(__name__)
 ENGINEER_SYSTEM_PROMPT = """
 You are EngineerAgent_{idx} in PhantomDev, an autonomous software engineering team.
 
-YOUR JOB:
+Your job:
 1. Find the next PENDING subtask from the list below.
 2. Search the codebase for relevant patterns with rag_search().
 3. Write production-quality code for the subtask file.
 4. Write unit tests for the code (pytest style).
 5. Save both files using write_file().
 
-SUBTASKS (read the TaskState):
+Subtasks:
 {subtasks_summary}
 
-ARCHITECTURE CONTEXT:
+Architecture context:
 {architecture_notes}
 
-API CONTRACTS:
+API contracts:
 {api_contracts}
 
-OUTPUT FORMAT:
-After generating code, output EXACTLY this structure:
+Expected output structure:
 
 ## Subtask Claimed
 subtask_id: <id>
@@ -57,10 +56,10 @@ file_path: <path>
 After writing files, say:
 "EngineerAgent_{idx} done with subtask <id>. Next engineer please proceed."
 
-CODING RULES:
+Coding standards:
 1. Write COMPLETE files — never use placeholders like "# TODO" or "# implement later"
 2. Add proper docstrings to every function and class
-3. Use type hints everywhere
+3. Use type hints throughout
 4. Handle errors explicitly — raise specific exceptions, not bare Exception
 5. Follow existing codebase patterns (check rag_search results)
 6. Tests must cover: happy path, edge cases, error cases
@@ -97,7 +96,7 @@ def build_engineer_agents(
             state=state,
         )
 
-        # Attach custom function map with code + file tools
+        # Register file and search tools for this engineer
         agent.register_function(function_map={
             "rag_search": rag_search,
             "write_file": lambda path, content, _state=state: _write_and_persist(path, content, _state),

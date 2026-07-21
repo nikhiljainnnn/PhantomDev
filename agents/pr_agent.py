@@ -1,7 +1,7 @@
 """
 agents/pr_agent.py
-──────────────────
-PR Agent: creates a GitHub branch, commits all generated files,
+
+PR Agent. Creates a branch, commits all generated files to GitHub,
 and opens a Pull Request for human review.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 PR_SYSTEM_PROMPT = """
 You are the PR Agent in PhantomDev.
 
-YOUR JOB:
+Your job:
 1. Call create_pull_request() to push all generated code and open a PR.
 2. Report the PR URL to the team.
 3. Emit the human approval signal.
@@ -37,7 +37,7 @@ def build_pr_agent(llm_config: dict, state: TaskState) -> autogen.ConversableAge
     agent = autogen.ConversableAgent(
         name="PRAgent",
         system_message="You are the PR Agent.",
-        llm_config=False,  # Disable LLM entirely for this deterministic step
+        llm_config=False,  # PR creation is deterministic — no LLM needed here
         human_input_mode="NEVER",
     )
 

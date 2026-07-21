@@ -1,9 +1,9 @@
 """
-api/main.py  (PRODUCTION VERSION)
-──────────────────────────────────
-Redis-backed task store, Celery dispatch, CORS locked to ALLOWED_ORIGINS,
-Prometheus metrics, structured JSON logging, WebSocket live-push for both
-BackgroundTask and Celery execution paths.
+api/main.py
+
+FastAPI backend. Redis-backed task store with optional Celery dispatch,
+WebSocket live-push, Prometheus metrics, and GitHub PR integration
+for both BackgroundTask and Celery execution paths.
 """
 from __future__ import annotations
 
@@ -25,22 +25,22 @@ from orchestrator.state import TaskState, TaskStatus
 from api.routes.github import router as github_router
 from api.routes.webhook import router as webhook_router
 
-# ── Structured JSON logging ────────────────────────────────────────────────────
+# Structured JSON logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# ── Config from environment ────────────────────────────────────────────────────
+# Config from environment
 API_KEY         = os.getenv("PHANTOMDEV_API_KEY", "")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 USE_CELERY      = os.getenv("USE_CELERY", "true").lower() == "true"
 
-# ── In-memory WebSocket registry (per-process, not persisted) ─────────────────
+# In-process WebSocket registry — not persisted across restarts
 websocket_connections: Dict[str, List[WebSocket]] = {}
 
-# ── API key auth ───────────────────────────────────────────────────────────────
+# API key auth
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def verify_api_key(key: Optional[str] = Depends(api_key_header)) -> None:
