@@ -5,12 +5,13 @@ Base class for all PhantomDev agents.
 Provides ChromaDB RAG search, workspace file I/O, and structured logging
 wired into the shared TaskState.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import autogen
 import chromadb
@@ -36,7 +37,9 @@ def get_chroma_collection(collection_name: str = "codebase") -> Any:
     )
 
 
-def rag_search(query: str, n_results: int = 5, collection_name: str = "codebase") -> str:
+def rag_search(
+    query: str, n_results: int = 5, collection_name: str = "codebase"
+) -> str:
     """
     Semantic search over indexed codebase.
     Returns formatted string of relevant code snippets.

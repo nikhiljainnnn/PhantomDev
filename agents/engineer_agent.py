@@ -5,6 +5,7 @@ Engineer Agents. Each one claims a subtask from the PM's list, generates
 production code and unit tests, and writes both to the workspace.
 Multiple instances run sequentially in the AutoGen GroupChat.
 """
+
 from __future__ import annotations
 
 import logging
@@ -97,12 +98,16 @@ def build_engineer_agents(
         )
 
         # Register file and search tools for this engineer
-        agent.register_function(function_map={
-            "rag_search": rag_search,
-            "write_file": lambda path, content, _state=state: _write_and_persist(path, content, _state),
-            "read_file": lambda path: _safe_read(path),
-            "list_files": lambda: _safe_list_files(),
-        })
+        agent.register_function(
+            function_map={
+                "rag_search": rag_search,
+                "write_file": lambda path, content, _state=state: _write_and_persist(
+                    path, content, _state
+                ),
+                "read_file": lambda path: _safe_read(path),
+                "list_files": lambda: _safe_list_files(),
+            }
+        )
 
         original_generate = agent.generate_reply
 
@@ -112,6 +117,7 @@ def build_engineer_agents(
                 if reply and isinstance(reply, str):
                     _parse_and_persist(reply, state, _idx)
                 return reply
+
             return generate_with_persistence
 
         agent.generate_reply = make_reply_fn(agent)
@@ -123,7 +129,12 @@ def build_engineer_agents(
 def _format_subtasks(state: TaskState) -> str:
     lines = []
     for st in state.subtasks:
-        status_icon = {"pending": "⏳", "in_progress": "🔨", "done": "✅", "failed": "❌"}.get(st.status, "?")
+        status_icon = {
+            "pending": "⏳",
+            "in_progress": "🔨",
+            "done": "✅",
+            "failed": "❌",
+        }.get(st.status, "?")
         lines.append(f"{status_icon} [{st.id}] {st.title} → {st.file_path}")
         if st.status == "pending":
             lines.append(f"   DESC: {st.description}")
@@ -150,29 +161,29 @@ def _write_and_persist(path: str, content: str, state: TaskState) -> str:
 
 def _safe_read(path: str) -> str:
     from agents.base_agent import read_workspace_file
+
     return read_workspace_file(path)
 
 
 def _safe_list_files() -> str:
     from agents.base_agent import list_workspace_files
+
     return list_workspace_files()
 
 
 def _parse_and_persist(reply: str, state: TaskState, agent_idx: int) -> None:
     """Parse engineer reply and save code blocks to workspace."""
     # Find all code blocks
-    code_blocks = re.findall(
-        r"```python\s*\n# ([\w/._-]+)\n(.*?)```",
-        reply,
-        re.DOTALL
-    )
+    code_blocks = re.findall(r"```python\s*\n# ([\w/._-]+)\n(.*?)```", reply, re.DOTALL)
 
     for file_path, code in code_blocks:
         file_path = file_path.strip()
         code = code.strip()
         if file_path and code:
             _write_and_persist(file_path, code, state)
-            logger.info(f"EngineerAgent_{agent_idx}: wrote {file_path} ({len(code)} chars)")
+            logger.info(
+                f"EngineerAgent_{agent_idx}: wrote {file_path} ({len(code)} chars)"
+            )
 
     # Update status if all subtasks done
     pending = [s for s in state.subtasks if s.status == "pending"]
