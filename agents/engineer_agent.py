@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import List
 
 from agents.base_agent import PhantomBaseAgent, rag_search, write_workspace_file
 from orchestrator.state import TaskState, TaskStatus
@@ -78,7 +77,7 @@ def build_engineer_agents(
     llm_config: dict,
     state: TaskState,
     count: int = 3,
-) -> List[PhantomBaseAgent]:
+) -> list[PhantomBaseAgent]:
     """Build N engineer agents, each aware of all subtasks."""
     agents = []
     for idx in range(count):

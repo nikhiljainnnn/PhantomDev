@@ -5,7 +5,6 @@ FastAPI backend. Redis-backed task store with optional Celery dispatch,
 WebSocket live-push, Prometheus metrics, and GitHub PR integration
 for both BackgroundTask and Celery execution paths.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +12,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import (
     BackgroundTasks,
@@ -30,11 +29,10 @@ from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 
 from api.models import CreateTaskRequest, TaskResponse
-from api.store import task_store
-from orchestrator.state import TaskState, TaskStatus
-
 from api.routes.github import router as github_router
 from api.routes.webhook import router as webhook_router
+from api.store import task_store
+from orchestrator.state import TaskState, TaskStatus
 
 # Structured JSON logging
 logging.basicConfig(
@@ -44,18 +42,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Config from environment
-API_KEY = os.getenv("PHANTOMDEV_API_KEY", "")
+API_KEY         = os.getenv("PHANTOMDEV_API_KEY", "")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
-USE_CELERY = os.getenv("USE_CELERY", "true").lower() == "true"
+USE_CELERY      = os.getenv("USE_CELERY", "true").lower() == "true"
 
 # In-process WebSocket registry — not persisted across restarts
-websocket_connections: Dict[str, List[WebSocket]] = {}
+websocket_connections: dict[str, list[WebSocket]] = {}
 
 # API key auth
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-
-async def verify_api_key(key: Optional[str] = Depends(api_key_header)) -> None:
+async def verify_api_key(key: str | None = Depends(api_key_header)) -> None:
     if not API_KEY:
         return
     if key != API_KEY:
@@ -64,13 +61,12 @@ async def verify_api_key(key: Optional[str] = Depends(api_key_header)) -> None:
 
 # ── GitHub PR helpers ──────────────────────────────────────────────────────────
 
-
-def _merge_github_pr(state: TaskState) -> tuple[bool, Optional[str]]:
+def _merge_github_pr(state: TaskState) -> tuple[bool, str | None]:
     """
     Squash-merge the GitHub PR associated with this task.
     Returns (success: bool, error_message: str | None)
     """
-    token = os.getenv("GITHUB_TOKEN", "")
+    token     = os.getenv("GITHUB_TOKEN", "")
     repo_name = state.target_repo
     pr_number = state.pr_number
 
@@ -79,16 +75,12 @@ def _merge_github_pr(state: TaskState) -> tuple[bool, Optional[str]]:
 
     try:
         from github import Github, GithubException
-
-        g = Github(token)
+        g    = Github(token)
         repo = g.get_repo(repo_name)
-        pr = repo.get_pull(pr_number)
+        pr   = repo.get_pull(pr_number)
 
         if not pr.mergeable:
-            return (
-                False,
-                "PR has conflicts or failing checks — merge it manually on GitHub",
-            )
+            return False, "PR has conflicts or failing checks — merge it manually on GitHub"
 
         pr.merge(
             commit_title=f"[PhantomDev] {state.github_issue_title}",
@@ -119,24 +111,19 @@ def _merge_github_pr(state: TaskState) -> tuple[bool, Optional[str]]:
     except Exception as e:
         try:
             from github import GithubException
-
-            msg = (
-                e.data.get("message", str(e))
-                if isinstance(e, GithubException) and hasattr(e, "data")
-                else str(e)
-            )
+            msg = e.data.get("message", str(e)) if isinstance(e, GithubException) and hasattr(e, "data") else str(e)
         except ImportError:
             msg = str(e)
         logger.error(f"GitHub merge failed: {msg}")
         return False, msg
 
 
-def _close_github_pr(state: TaskState, reason: str) -> tuple[bool, Optional[str]]:
+def _close_github_pr(state: TaskState, reason: str) -> tuple[bool, str | None]:
     """
     Close the GitHub PR with a rejection comment.
     Returns (success: bool, error_message: str | None)
     """
-    token = os.getenv("GITHUB_TOKEN", "")
+    token     = os.getenv("GITHUB_TOKEN", "")
     repo_name = state.target_repo
     pr_number = state.pr_number
 
@@ -145,10 +132,9 @@ def _close_github_pr(state: TaskState, reason: str) -> tuple[bool, Optional[str]
 
     try:
         from github import Github
-
-        g = Github(token)
+        g    = Github(token)
         repo = g.get_repo(repo_name)
-        pr = repo.get_pull(pr_number)
+        pr   = repo.get_pull(pr_number)
 
         # Post rejection comment first
         pr.create_issue_comment(
@@ -190,11 +176,8 @@ async def lifespan(app: FastAPI):
     ]:
         os.makedirs(d, exist_ok=True)
     await task_store.connect()
-    logger.info(
-        "PhantomDev API started | celery=%s | redis=%s",
-        USE_CELERY,
-        "connected" if not task_store._use_fallback else "fallback",
-    )
+    logger.info("PhantomDev API started | celery=%s | redis=%s", USE_CELERY,
+                "connected" if not task_store._use_fallback else "fallback")
     yield
     await task_store.close()
     logger.info("PhantomDev API shutdown")
@@ -217,7 +200,6 @@ app.include_router(webhook_router)
 # ── Prometheus metrics ─────────────────────────────────────────────────────────
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
-
     Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 except ImportError:
     pass
@@ -239,7 +221,6 @@ async def log_requests(request: Request, call_next):
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
-
 
 @app.get("/health")
 async def health():
@@ -268,18 +249,13 @@ async def create_task(request: CreateTaskRequest, background_tasks: BackgroundTa
 
     if USE_CELERY:
         from worker.celery_app import run_pipeline
-
         run_pipeline.delay(state.task_id, state.model_dump_json())
         logger.info("Task %s dispatched to Celery", state.task_id)
     else:
         background_tasks.add_task(_run_pipeline_bg, state.task_id)
         logger.info("Task %s started in BackgroundTasks", state.task_id)
 
-    return TaskResponse(
-        task_id=state.task_id,
-        status=state.status,
-        message="Task created. Pipeline starting.",
-    )
+    return TaskResponse(task_id=state.task_id, status=state.status, message="Task created. Pipeline starting.")
 
 
 @app.get("/tasks", dependencies=[Depends(verify_api_key)])
@@ -288,18 +264,16 @@ async def list_tasks():
     result = []
     for t in tasks:
         fresh = await _get_fresh_state(t.task_id) or t
-        result.append(
-            {
-                "task_id": fresh.task_id,
-                "status": fresh.status,
-                "title": fresh.github_issue_title,
-                "created_at": fresh.created_at,
-                "updated_at": fresh.updated_at,
-                "pr_url": fresh.pr_url,
-                "coverage": fresh.metrics.coverage_pct,
-                "files_generated": len(fresh.generated_files),
-            }
-        )
+        result.append({
+            "task_id": fresh.task_id,
+            "status": fresh.status,
+            "title": fresh.github_issue_title,
+            "created_at": fresh.created_at,
+            "updated_at": fresh.updated_at,
+            "pr_url": fresh.pr_url,
+            "coverage": fresh.metrics.coverage_pct,
+            "files_generated": len(fresh.generated_files),
+        })
     return result
 
 
@@ -326,9 +300,7 @@ async def approve_pr(task_id: str):
     if not state:
         raise HTTPException(status_code=404, detail="Task not found")
     if state.status != TaskStatus.PR_OPEN:
-        raise HTTPException(
-            status_code=400, detail=f"Task status is {state.status}, expected pr_open"
-        )
+        raise HTTPException(status_code=400, detail=f"Task status is {state.status}, expected pr_open")
 
     # ── Attempt real GitHub merge ─────────────────────────────────────────────
     merged, merge_error = _merge_github_pr(state)
@@ -336,13 +308,9 @@ async def approve_pr(task_id: str):
     # ── Update state ──────────────────────────────────────────────────────────
     state.set_status(TaskStatus.APPROVED)
     if merged:
-        state.add_message(
-            "Human", f"✅ PR #{state.pr_number} approved and merged on GitHub"
-        )
+        state.add_message("Human", f"✅ PR #{state.pr_number} approved and merged on GitHub")
     elif merge_error and "not configured" not in merge_error:
-        state.add_message(
-            "Human", f"✅ PR approved in dashboard\n⚠️ GitHub merge: {merge_error}"
-        )
+        state.add_message("Human", f"✅ PR approved in dashboard\n⚠️ GitHub merge: {merge_error}")
     else:
         state.add_message("Human", "✅ PR approved")
 
@@ -371,15 +339,9 @@ async def reject_pr(task_id: str, reason: str = ""):
     # ── Update state ──────────────────────────────────────────────────────────
     state.set_status(TaskStatus.REJECTED)
     if closed:
-        state.add_message(
-            "Human",
-            f"❌ PR #{state.pr_number} rejected and closed on GitHub\nReason: {reason}",
-        )
+        state.add_message("Human", f"❌ PR #{state.pr_number} rejected and closed on GitHub\nReason: {reason}")
     elif close_error and "not configured" not in close_error:
-        state.add_message(
-            "Human",
-            f"❌ PR rejected in dashboard\n⚠️ GitHub close: {close_error}\nReason: {reason}",
-        )
+        state.add_message("Human", f"❌ PR rejected in dashboard\n⚠️ GitHub close: {close_error}\nReason: {reason}")
     else:
         state.add_message("Human", f"❌ PR rejected\nReason: {reason}")
 
@@ -394,7 +356,7 @@ async def reject_pr(task_id: str, reason: str = ""):
 
 
 @app.post("/webhook/github")
-async def github_webhook(payload: Dict[str, Any], background_tasks: BackgroundTasks):
+async def github_webhook(payload: dict[str, Any], background_tasks: BackgroundTasks):
     event_type = payload.get("action", "")
     issue = payload.get("issue", {})
     labels = [label.get("name", "") for label in issue.get("labels", [])]
@@ -409,13 +371,10 @@ async def github_webhook(payload: Dict[str, Any], background_tasks: BackgroundTa
         websocket_connections[state.task_id] = []
         if USE_CELERY:
             from worker.celery_app import run_pipeline
-
             run_pipeline.delay(state.task_id, state.model_dump_json())
         else:
             background_tasks.add_task(_run_pipeline_bg, state.task_id)
-        logger.info(
-            "Webhook task created: %s (issue #%s)", state.task_id, issue.get("number")
-        )
+        logger.info("Webhook task created: %s (issue #%s)", state.task_id, issue.get("number"))
         return {"task_id": state.task_id}
     return {"message": "ignored"}
 
@@ -445,13 +404,11 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
                 new_msgs = fresh.agent_messages[last_msg_count:]
                 for msg in new_msgs:
                     try:
-                        await websocket.send_json(
-                            {
-                                **msg,
-                                "status": fresh.status,
-                                "metrics": fresh.metrics.model_dump(),
-                            }
-                        )
+                        await websocket.send_json({
+                            **msg,
+                            "status": fresh.status,
+                            "metrics": fresh.metrics.model_dump(),
+                        })
                     except Exception:
                         break
                 last_msg_count = len(fresh.agent_messages)
@@ -472,7 +429,6 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
 # ── Internal pipeline runner (BackgroundTasks path only) ──────────────────────
 async def _run_pipeline_bg(task_id: str) -> None:
     from orchestrator.group_chat import PhantomDevOrchestrator
-
     state = await task_store.get(task_id)
     if not state:
         return
@@ -484,21 +440,19 @@ async def _run_pipeline_bg(task_id: str) -> None:
     final_state = await PhantomDevOrchestrator(on_update=on_update).run(state)
     if final_state:
         await task_store.save(final_state)
-        logger.info(
-            "Task %s final state saved to Redis: %s", task_id, final_state.status
-        )
+        logger.info("Task %s final state saved to Redis: %s", task_id, final_state.status)
 
 
 # ── File-state bridge ──────────────────────────────────────────────────────────
-async def _get_fresh_state(task_id: str) -> Optional[TaskState]:
+async def _get_fresh_state(task_id: str) -> TaskState | None:
     redis_state = await task_store.get(task_id)
 
     try:
         from orchestrator.group_chat import load_state_from_file
-
         file_state = load_state_from_file(task_id)
         if file_state and (
-            redis_state is None or file_state.updated_at > redis_state.updated_at
+            redis_state is None or
+            file_state.updated_at > redis_state.updated_at
         ):
             await task_store.save(file_state)
             return file_state
@@ -517,13 +471,11 @@ async def _broadcast(task_id: str, state: TaskState) -> None:
     dead = []
     for ws in connections:
         try:
-            await ws.send_json(
-                {
-                    **latest,
-                    "status": state.status,
-                    "metrics": state.metrics.model_dump(),
-                }
-            )
+            await ws.send_json({
+                **latest,
+                "status": state.status,
+                "metrics": state.metrics.model_dump(),
+            })
         except Exception:
             dead.append(ws)
     for ws in dead:
@@ -531,15 +483,15 @@ async def _broadcast(task_id: str, state: TaskState) -> None:
             connections.remove(ws)
 
 
-_frontend_dist = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "frontend", "dist"
-)
+# ── Serve React Frontend ───────────────────────────────────────────────────────
+
+_frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 
 if os.path.isdir(_frontend_dist):
     assets_dir = os.path.join(_frontend_dist, "assets")
     if os.path.isdir(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
+    
     @app.get("/{full_path:path}")
     async def catch_all(full_path: str):
         index_path = os.path.join(_frontend_dist, "index.html")

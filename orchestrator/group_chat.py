@@ -5,50 +5,40 @@ Runs the AutoGen GroupChat pipeline. Uses a file-based state bridge
 so state updates work reliably on Windows where asyncio event loop
 access from thread executor context is restricted.
 """
-
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 import autogen
-from autogen import GroupChat, GroupChatManager
-import asyncio
-
 import openai
+from autogen import GroupChat, GroupChatManager
 from langsmith import wrappers
-
-from orchestrator.state import TaskState, TaskStatus
-from agents.pm_agent import build_pm_agent
-from agents.architect_agent import build_architect_agent
-from agents.engineer_agent import build_engineer_agents
-from agents.qa_agent import build_qa_agent
-from agents.security_agent import build_security_agent
-from agents.writer_agent import build_writer_agent
-from agents.pr_agent import build_pr_agent
 
 # Patch OpenAI clients so LangSmith tracing picks up AutoGen calls automatically.
 _orig_sync_init = openai.OpenAI.__init__
-
-
 def _patched_sync_init(self, *args, **kwargs):
     _orig_sync_init(self, *args, **kwargs)
     wrappers.wrap_openai(self)
-
-
 openai.OpenAI.__init__ = _patched_sync_init
 
 _orig_async_init = openai.AsyncOpenAI.__init__
-
-
 def _patched_async_init(self, *args, **kwargs):
     _orig_async_init(self, *args, **kwargs)
     wrappers.wrap_openai(self)
-
-
 openai.AsyncOpenAI.__init__ = _patched_async_init
+
+from agents.architect_agent import build_architect_agent
+from agents.engineer_agent import build_engineer_agents
+from agents.pm_agent import build_pm_agent
+from agents.pr_agent import build_pr_agent
+from agents.qa_agent import build_qa_agent
+from agents.security_agent import build_security_agent
+from agents.writer_agent import build_writer_agent
+from orchestrator.state import TaskState, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +49,7 @@ STATE_DIR = Path(os.getenv("WORKSPACE_DIR", "./workspace")) / ".state"
 
 def get_llm_config() -> dict:
     # Priority order: Groq → OpenAI → Ollama (local)
-    groq_key = os.getenv("GROQ_API_KEY", "")
+    groq_key   = os.getenv("GROQ_API_KEY", "")
     openai_key = os.getenv("OPENAI_API_KEY", "")
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
@@ -67,13 +57,11 @@ def get_llm_config() -> dict:
     if groq_key:
         logger.info("Using Groq: llama-3.3-70b-versatile")
         return {
-            "config_list": [
-                {
-                    "model": "llama-3.3-70b-versatile",
-                    "api_key": groq_key,
-                    "base_url": "https://api.groq.com/openai/v1",
-                }
-            ],
+            "config_list": [{
+                "model": "llama-3.3-70b-versatile",
+                "api_key": groq_key,
+                "base_url": "https://api.groq.com/openai/v1",
+            }],
             "temperature": 0.1,
             "timeout": 60,
             "cache_seed": None,
@@ -82,12 +70,10 @@ def get_llm_config() -> dict:
     if openai_key:
         logger.info("Using OpenAI: gpt-4o-mini")
         return {
-            "config_list": [
-                {
-                    "model": "gpt-4o-mini",
-                    "api_key": openai_key,
-                }
-            ],
+            "config_list": [{
+                "model": "gpt-4o-mini",
+                "api_key": openai_key,
+            }],
             "temperature": 0.1,
             "timeout": 60,
             "cache_seed": None,
@@ -95,13 +81,11 @@ def get_llm_config() -> dict:
 
     logger.info(f"Using Ollama: {ollama_model}")
     return {
-        "config_list": [
-            {
-                "model": ollama_model,
-                "base_url": f"{ollama_url}/v1",
-                "api_key": "ollama",
-            }
-        ],
+        "config_list": [{
+            "model": ollama_model,
+            "base_url": f"{ollama_url}/v1",
+            "api_key": "ollama",
+        }],
         "temperature": 0.1,
         "timeout": int(os.getenv("AGENT_TIMEOUT", 180)),
         "cache_seed": None,
@@ -110,31 +94,22 @@ def get_llm_config() -> dict:
 
 def is_termination_msg(msg: dict) -> bool:
     content = msg.get("content", "") or ""
-    return any(
-        m in content
-        for m in ["PHANTOMDEV_COMPLETE", "PHANTOMDEV_FAILED", "HUMAN_APPROVAL_REQUIRED"]
-    )
+    return any(m in content for m in [
+        "PHANTOMDEV_COMPLETE", "PHANTOMDEV_FAILED", "HUMAN_APPROVAL_REQUIRED"
+    ])
 
 
 # Fixed agent execution order — no LLM decides who speaks next.
 AGENT_ORDER = [
-    "PMAgent",
-    "ArchitectAgent",
-    "EngineerAgent_0",
-    "EngineerAgent_1",
-    "EngineerAgent_2",
-    "QAAgent",
-    "SecurityAgent",
-    "WriterAgent",
-    "PRAgent",
+    "PMAgent", "ArchitectAgent",
+    "EngineerAgent_0", "EngineerAgent_1", "EngineerAgent_2",
+    "QAAgent", "SecurityAgent", "WriterAgent", "PRAgent",
 ]
 
 
 def custom_speaker_selection(last_speaker, groupchat):
     agents_by_name = {a.name: a for a in groupchat.agents}
-    idx = (
-        AGENT_ORDER.index(last_speaker.name) if last_speaker.name in AGENT_ORDER else -1
-    )
+    idx = AGENT_ORDER.index(last_speaker.name) if last_speaker.name in AGENT_ORDER else -1
     next_name = AGENT_ORDER[min(idx + 1, len(AGENT_ORDER) - 1)]
     return agents_by_name.get(next_name, groupchat.agents[0])
 
@@ -155,7 +130,7 @@ def _save_state_sync(state: TaskState) -> None:
         logger.warning(f"State save failed: {e}")
 
 
-def load_state_from_file(task_id: str) -> Optional[TaskState]:
+def load_state_from_file(task_id: str) -> TaskState | None:
     """Load task state from the file-based store. Used by the API to get the freshest state."""
     try:
         path = STATE_DIR / f"{task_id}.json"
@@ -167,7 +142,8 @@ def load_state_from_file(task_id: str) -> Optional[TaskState]:
 
 
 class PhantomDevOrchestrator:
-    def __init__(self, on_update: Optional[Callable] = None):
+
+    def __init__(self, on_update: Callable | None = None):
         self._on_update_cb = on_update
         self.llm_config = get_llm_config()
 
@@ -182,7 +158,6 @@ class PhantomDevOrchestrator:
         if self._on_update_cb is not None:
             try:
                 import inspect
-
                 if inspect.iscoroutinefunction(self._on_update_cb):
                     try:
                         loop = asyncio.get_running_loop()
@@ -199,30 +174,24 @@ class PhantomDevOrchestrator:
     async def run(self, state: TaskState) -> TaskState:
         logger.info(f"Starting task {state.task_id}")
         state.set_status(TaskStatus.PLANNING)
-        state.add_message(
-            "PhantomDev", f"🚀 Pipeline starting for: {state.github_issue_title}"
-        )
+        state.add_message("PhantomDev", f"🚀 Pipeline starting for: {state.github_issue_title}")
         _save_state_sync(state)
 
         try:
-            pm_agent = build_pm_agent(self.llm_config, state)
+            pm_agent        = build_pm_agent(self.llm_config, state)
             architect_agent = build_architect_agent(self.llm_config, state)
             engineer_agents = build_engineer_agents(
                 self.llm_config, state, count=int(os.getenv("MAX_ENGINEERS", 3))
             )
-            qa_agent = build_qa_agent(self.llm_config, state)
+            qa_agent       = build_qa_agent(self.llm_config, state)
             security_agent = build_security_agent(self.llm_config, state)
-            writer_agent = build_writer_agent(self.llm_config, state)
-            pr_agent = build_pr_agent(self.llm_config, state)
+            writer_agent   = build_writer_agent(self.llm_config, state)
+            pr_agent       = build_pr_agent(self.llm_config, state)
 
             all_agents = [
-                pm_agent,
-                architect_agent,
+                pm_agent, architect_agent,
                 *engineer_agents,
-                qa_agent,
-                security_agent,
-                writer_agent,
-                pr_agent,
+                qa_agent, security_agent, writer_agent, pr_agent,
             ]
 
             for ag in all_agents:
@@ -250,9 +219,7 @@ class PhantomDevOrchestrator:
                 is_termination_msg=is_termination_msg,
             )
 
-            state.add_message(
-                "PhantomDev", "🤖 All agents ready. PMAgent analysing requirements…"
-            )
+            state.add_message("PhantomDev", "🤖 All agents ready. PMAgent analysing requirements…")
             _save_state_sync(state)
 
             loop = asyncio.get_event_loop()
@@ -266,7 +233,7 @@ class PhantomDevOrchestrator:
             )
 
             last_msgs = groupchat.messages[-5:] if groupchat.messages else []
-            combined = " ".join(m.get("content", "") for m in last_msgs)
+            combined  = " ".join(m.get("content", "") for m in last_msgs)
 
             if "PHANTOMDEV_FAILED" in combined:
                 state.fail("Agent pipeline reported failure")

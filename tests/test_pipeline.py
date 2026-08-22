@@ -6,17 +6,15 @@ Uses a mock LLM to test the full agent flow without burning tokens.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-import pytest
 
 # Set test environment BEFORE importing project modules
 os.environ.setdefault("WORKSPACE_DIR", "/tmp/phantomdev_test_workspace")
 os.environ.setdefault("CHROMA_PERSIST_DIR", "/tmp/phantomdev_test_chroma")
 os.environ.setdefault("SANDBOX_DIR", "/tmp/phantomdev_test_sandbox")
 
-from orchestrator.state import TaskState, TaskStatus, SubTask, EvalMetrics
+from orchestrator.state import EvalMetrics, SubTask, TaskState, TaskStatus
 
 
 class TestTaskState:
@@ -152,8 +150,8 @@ class TestSecurityScanner:
         (tmp_path / "clean.py").write_text(
             'def greet(name: str) -> str:\n    """Greet a user."""\n    return f"Hello, {name}"\n'
         )
-        from agents.security_agent import run_bandit
         import importlib
+
         import agents.security_agent as sa
         importlib.reload(sa)
         result = json.loads(sa.run_bandit())
@@ -166,6 +164,7 @@ class TestAPIHealth:
 
     def test_health_endpoint(self):
         from fastapi.testclient import TestClient
+
         from api.main import app
         client = TestClient(app)
         response = client.get("/health")
@@ -175,6 +174,7 @@ class TestAPIHealth:
 
     def test_create_task(self):
         from fastapi.testclient import TestClient
+
         from api.main import app
         client = TestClient(app)
         response = client.post("/tasks", json={
@@ -187,6 +187,7 @@ class TestAPIHealth:
 
     def test_get_nonexistent_task(self):
         from fastapi.testclient import TestClient
+
         from api.main import app
         client = TestClient(app)
         response = client.get("/tasks/nonexistent-id")

@@ -5,13 +5,11 @@ Product Manager Agent. Takes a GitHub Issue and produces a structured
 requirements breakdown with subtasks for the engineering agents to pick up.
 Results are written directly into the shared TaskState.
 """
-
 from __future__ import annotations
 
 import json
 import logging
 import re
-
 
 from agents.base_agent import PhantomBaseAgent
 from orchestrator.state import SubTask, TaskState, TaskStatus
@@ -96,13 +94,11 @@ def _parse_and_persist(reply: str, state: TaskState) -> None:
 
         subtasks = []
         for raw in data.get("subtasks", []):
-            subtasks.append(
-                SubTask(
-                    title=raw["title"],
-                    description=raw["description"],
-                    file_path=raw["file_path"],
-                )
-            )
+            subtasks.append(SubTask(
+                title=raw["title"],
+                description=raw["description"],
+                file_path=raw["file_path"],
+            ))
         state.subtasks = subtasks
         state.set_status(TaskStatus.ARCHITECTING)
 

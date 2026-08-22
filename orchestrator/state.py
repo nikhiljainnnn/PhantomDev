@@ -4,45 +4,44 @@ orchestrator/state.py
 Shared state machine for a PhantomDev task.
 All agents read from and write to this object as it moves through the pipeline.
 """
-
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
 class TaskStatus(str, Enum):
-    PENDING = "pending"
-    PLANNING = "planning"
+    PENDING      = "pending"
+    PLANNING     = "planning"
     ARCHITECTING = "architecting"
-    CODING = "coding"
-    TESTING = "testing"
-    SECURING = "securing"
-    DOCUMENTING = "documenting"
-    PR_OPEN = "pr_open"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    FAILED = "failed"
+    CODING       = "coding"
+    TESTING      = "testing"
+    SECURING     = "securing"
+    DOCUMENTING  = "documenting"
+    PR_OPEN      = "pr_open"
+    APPROVED     = "approved"
+    REJECTED     = "rejected"
+    FAILED       = "failed"
 
 
 class SubTask(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     title: str
     description: str
-    file_path: str  # target file to create/modify
-    status: str = "pending"  # pending | in_progress | done | failed
-    assigned_to: Optional[str] = None
-    code: Optional[str] = None
-    tests: Optional[str] = None
-    error: Optional[str] = None
+    file_path: str          # target file to create/modify
+    status: str = "pending" # pending | in_progress | done | failed
+    assigned_to: str | None = None
+    code: str | None = None
+    tests: str | None = None
+    error: str | None = None
 
 
 class SecurityFinding(BaseModel):
-    severity: str  # HIGH | MEDIUM | LOW
+    severity: str   # HIGH | MEDIUM | LOW
     test_id: str
     issue_text: str
     line_number: int
@@ -64,64 +63,61 @@ class TaskState(BaseModel):
     The single source of truth passed through the AutoGen GroupChat.
     Agents mutate this object and it is serialised to JSON for persistence.
     """
-
     # ── Identity ────────────────────────────────────────────────────────
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
 
     # ── Input ────────────────────────────────────────────────────────────
-    github_issue_number: Optional[int] = None
+    github_issue_number: int | None = None
     github_issue_title: str = ""
     github_issue_body: str = ""
     target_repo: str = ""
     base_branch: str = "main"
 
     # ── Planning outputs ─────────────────────────────────────────────────
-    requirements: List[str] = []
-    acceptance_criteria: List[str] = []
-    subtasks: List[SubTask] = []
+    requirements: list[str] = []
+    acceptance_criteria: list[str] = []
+    subtasks: list[SubTask] = []
 
     # ── Architecture outputs ─────────────────────────────────────────────
     architecture_notes: str = ""
-    api_contracts: str = ""  # OpenAPI YAML snippets
-    tech_decisions: List[str] = []
+    api_contracts: str = ""          # OpenAPI YAML snippets
+    tech_decisions: list[str] = []
 
     # ── Generated artifacts ──────────────────────────────────────────────
-    generated_files: Dict[str, str] = {}  # path → code content
-    test_files: Dict[str, str] = {}  # path → test content
+    generated_files: dict[str, str] = {}   # path → code content
+    test_files: dict[str, str] = {}         # path → test content
     documentation: str = ""
 
     # ── QA outputs ──────────────────────────────────────────────────────
-    test_results: Dict[str, Any] = {}
+    test_results: dict[str, Any] = {}
     coverage_report: str = ""
 
     # ── Security outputs ─────────────────────────────────────────────────
-    security_findings: List[SecurityFinding] = []
+    security_findings: list[SecurityFinding] = []
 
     # ── PR ───────────────────────────────────────────────────────────────
     branch_name: str = ""
     pr_url: str = ""
-    pr_number: Optional[int] = None
+    pr_number: int | None = None
     pr_body: str = ""
 
     # ── Workflow ─────────────────────────────────────────────────────────
     status: TaskStatus = TaskStatus.PENDING
     current_agent: str = ""
-    agent_messages: List[Dict[str, str]] = []  # for WebSocket streaming
-    errors: List[str] = []
+    agent_messages: list[dict[str, str]] = []  # for WebSocket streaming
+    errors: list[str] = []
 
     # ── Evaluation ───────────────────────────────────────────────────────
     metrics: EvalMetrics = Field(default_factory=EvalMetrics)
 
     def add_message(self, agent: str, content: str) -> None:
-        self.agent_messages.append(
-            {
-                "agent": agent,
-                "content": content,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        )
+        self.agent_messages.append({
+            "agent": agent,
+            "content": content,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
         self.current_agent = agent
         self.updated_at = datetime.utcnow().isoformat()
 

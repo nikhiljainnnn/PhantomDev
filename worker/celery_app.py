@@ -11,7 +11,6 @@ Start worker:
 Monitor:
     celery -A worker.celery_app flower --port=5555
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -38,19 +37,24 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="UTC",
     enable_utc=True,
+
     # Retry settings
-    task_acks_late=True,  # re-queue on worker crash
+    task_acks_late=True,               # re-queue on worker crash
     task_reject_on_worker_lost=True,
     task_max_retries=3,
-    task_default_retry_delay=30,  # 30s between retries
+    task_default_retry_delay=30,       # 30s between retries
+
     # Timeout — agent pipeline max 45 min
-    task_soft_time_limit=2700,  # 45 min soft limit → raises SoftTimeLimitExceeded
-    task_time_limit=2880,  # 48 min hard kill
+    task_soft_time_limit=2700,         # 45 min soft limit → raises SoftTimeLimitExceeded
+    task_time_limit=2880,              # 48 min hard kill
+
     # Concurrency — limit to 2 pipelines simultaneously (Ollama bottleneck)
     worker_concurrency=2,
     worker_prefetch_multiplier=1,
+
     # Result expiry
-    result_expires=86400 * 7,  # 7 days
+    result_expires=86400 * 7,          # 7 days
+
     # Routing
     task_routes={
         "worker.celery_app.run_pipeline": {"queue": "pipeline"},
@@ -72,8 +76,8 @@ def run_pipeline(self, task_id: str, state_json: str) -> dict:
     Receives serialised TaskState JSON, runs the full pipeline,
     saves result back to Redis.
     """
-    from orchestrator.state import TaskState
     from orchestrator.group_chat import PhantomDevOrchestrator
+    from orchestrator.state import TaskState
 
     logger.info(f"Worker starting pipeline for task {task_id}")
 
@@ -88,7 +92,6 @@ def run_pipeline(self, task_id: str, state_json: str) -> dict:
         try:
             # Sync Redis write from sync context
             import redis as sync_redis
-
             r = sync_redis.from_url(REDIS_URL, decode_responses=True)
             key = f"phantomdev:task:{updated_state.task_id}"
             r.setex(key, 86400 * 7, updated_state.model_dump_json())

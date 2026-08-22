@@ -1,17 +1,18 @@
 """api/models.py — Pydantic request/response schemas."""
 
 from __future__ import annotations
-from typing import Optional
+
 from pydantic import BaseModel, Field
+
 from orchestrator.state import TaskStatus
 
 
 class CreateTaskRequest(BaseModel):
     title: str = Field(..., description="Issue title or feature name")
     body: str = Field(..., description="Full issue description with requirements")
-    issue_number: Optional[int] = Field(None, description="GitHub issue number")
-    repo: Optional[str] = Field(None, description="GitHub repo (owner/name)")
-    base_branch: Optional[str] = Field("main", description="Branch to PR into")
+    issue_number: int | None = Field(None, description="GitHub issue number")
+    repo: str | None = Field(None, description="GitHub repo (owner/name)")
+    base_branch: str | None = Field("main", description="Branch to PR into")
 
     model_config = {
         "json_schema_extra": {

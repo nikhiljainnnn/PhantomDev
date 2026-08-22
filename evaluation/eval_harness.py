@@ -8,16 +8,14 @@ Usage:
     python -m evaluation.eval_harness --task-id <task_id>
     python -m evaluation.eval_harness --all   # evaluate all completed tasks
 """
-
 from __future__ import annotations
 
 import re
-from typing import Dict
 
 from orchestrator.state import TaskState
 
 
-def evaluate_task(state: TaskState) -> Dict:
+def evaluate_task(state: TaskState) -> dict:
     """
     Run full evaluation suite on a completed task.
     Returns a scorecard dict.
@@ -44,19 +42,13 @@ def evaluate_task(state: TaskState) -> Dict:
     has_summary = "## Summary" in doc
     has_changes = "## Changes" in doc
     has_testing = "## Testing" in doc
-    scores["doc_completeness"] = round(
-        sum([has_summary, has_changes, has_testing]) / 3, 2
-    )
+    scores["doc_completeness"] = round(sum([has_summary, has_changes, has_testing]) / 3, 2)
 
     # 6. Code quality — avg function length (shorter = better)
     total_lines = 0
     file_count = 0
     for content in state.generated_files.values():
-        lines = [
-            line
-            for line in content.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
+        lines = [l for l in content.splitlines() if l.strip() and not l.strip().startswith("#")]
         total_lines += len(lines)
         file_count += 1
     avg_lines = total_lines / file_count if file_count > 0 else 0
@@ -97,7 +89,7 @@ def evaluate_task(state: TaskState) -> Dict:
     return scores
 
 
-def print_scorecard(task_id: str, scores: Dict) -> None:
+def print_scorecard(task_id: str, scores: dict) -> None:
     """Pretty-print evaluation results."""
     print(f"\n{'='*60}")
     print("  PhantomDev Evaluation Scorecard")
@@ -122,19 +114,9 @@ def print_scorecard(task_id: str, scores: Dict) -> None:
 
     print(f"{'─'*60}")
     composite = scores["composite_score"]
-    grade = (
-        "A"
-        if composite >= 0.85
-        else "B"
-        if composite >= 0.70
-        else "C"
-        if composite >= 0.55
-        else "D"
-    )
+    grade = "A" if composite >= 0.85 else "B" if composite >= 0.70 else "C" if composite >= 0.55 else "D"
     print(f"  🏆 COMPOSITE SCORE: {composite:.1%}  (Grade: {grade})")
-    print(
-        f"  📁 Files: {scores['files_generated']} code + {scores['test_files_generated']} tests"
-    )
+    print(f"  📁 Files: {scores['files_generated']} code + {scores['test_files_generated']} tests")
     print(f"  📏 Lines of Code: {scores['lines_of_code']}")
     if scores["pr_url"]:
         print(f"  🔗 PR: {scores['pr_url']}")
@@ -143,7 +125,6 @@ def print_scorecard(task_id: str, scores: Dict) -> None:
 
 if __name__ == "__main__":
     import argparse
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--task-id", help="Evaluate a specific task")
     parser.add_argument("--demo", action="store_true", help="Run with demo state")
@@ -152,22 +133,11 @@ if __name__ == "__main__":
     if args.demo:
         # Demo state for testing the eval harness
         from orchestrator.state import EvalMetrics, SubTask, TaskStatus
-
         state = TaskState(
             github_issue_title="Demo: Add user auth",
             subtasks=[
-                SubTask(
-                    title="User model",
-                    description="",
-                    file_path="app/models/user.py",
-                    status="done",
-                ),
-                SubTask(
-                    title="Auth routes",
-                    description="",
-                    file_path="app/api/auth.py",
-                    status="done",
-                ),
+                SubTask(title="User model", description="", file_path="app/models/user.py", status="done"),
+                SubTask(title="Auth routes", description="", file_path="app/api/auth.py", status="done"),
             ],
             generated_files={
                 "app/models/user.py": 'from typing import Optional\n\nclass User:\n    """User model."""\n    def __init__(self, id: int, email: str) -> None:\n        self.id = id\n        self.email = email\n',
@@ -175,9 +145,7 @@ if __name__ == "__main__":
             },
             test_files={"tests/test_auth.py": "def test_login(): assert True"},
             documentation="## Summary\nAdds JWT auth.\n## Changes\n- user.py\n## Testing\n100% pass",
-            metrics=EvalMetrics(
-                test_pass_rate=1.0, coverage_pct=85.0, security_high_count=0
-            ),
+            metrics=EvalMetrics(test_pass_rate=1.0, coverage_pct=85.0, security_high_count=0),
             status=TaskStatus.PR_OPEN,
             pr_url="http://localhost:3000/dry-run",
         )
