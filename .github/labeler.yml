@@ -1,0 +1,40 @@
+# .github/labeler.yml
+# Auto-label PRs based on changed file paths
+
+agents:
+  - agents/**
+
+api:
+  - api/**
+
+orchestrator:
+  - orchestrator/**
+
+worker:
+  - worker/**
+
+frontend:
+  - frontend/**
+
+infra:
+  - infra/**
+  - docker-compose*.yml
+  - "*.Dockerfile"
+
+tests:
+  - tests/**
+
+ci/cd:
+  - .github/**
+
+documentation:
+  - "*.md"
+  - docs/**
+
+evaluation:
+  - evaluation/**
+
+dependencies:
+  - requirements.txt
+  - frontend/package.json
+  - frontend/package-lock.json

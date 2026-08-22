@@ -472,3 +472,22 @@ async def _broadcast(task_id: str, state: TaskState) -> None:
     for ws in dead:
         if ws in connections:
             connections.remove(ws)
+
+
+# ── Serve React Frontend ───────────────────────────────────────────────────────
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+_frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+
+if os.path.isdir(_frontend_dist):
+    assets_dir = os.path.join(_frontend_dist, "assets")
+    if os.path.isdir(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    
+    @app.get("/{full_path:path}")
+    async def catch_all(full_path: str):
+        index_path = os.path.join(_frontend_dist, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        raise HTTPException(status_code=404, detail="Not Found")

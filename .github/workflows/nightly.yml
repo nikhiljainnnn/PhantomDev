@@ -1,0 +1,173 @@
+name: Nightly — Full Integration Test + Eval
+
+on:
+  schedule:
+    - cron: "0 1 * * *"    # 01:00 UTC every night
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Full pytest suite including slower integration tests
+  # ─────────────────────────────────────────────────────────────────
+  integration-tests:
+    name: Full Integration Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run full test suite
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          WORKSPACE_DIR: /tmp/phantomdev_test
+          CHROMA_PERSIST_DIR: /tmp/phantomdev_chroma
+          SANDBOX_DIR: /tmp/phantomdev_sandbox
+          USE_CELERY: "false"
+        run: |
+          pytest tests/ \
+            --tb=long \
+            --cov=agents --cov=api --cov=orchestrator --cov=worker --cov=evaluation \
+            --cov-report=xml \
+            --cov-report=html:coverage-report \
+            --cov-fail-under=60 \
+            -v
+
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.run_id }}
+          path: coverage-report/
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────
+  # Run PhantomDev evaluation harness with demo state
+  # ─────────────────────────────────────────────────────────────────
+  eval-harness:
+    name: Eval Harness Demo
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run eval harness (demo mode)
+        run: |
+          PYTHONPATH=. python -m evaluation.eval_harness --demo
+
+  # ─────────────────────────────────────────────────────────────────
+  # Check for stale/vulnerable dependencies nightly
+  # ─────────────────────────────────────────────────────────────────
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install audit tools
+        run: pip install safety==3.2.8 pip-audit==2.7.3
+
+      - name: pip-audit scan
+        run: |
+          pip install -r requirements.txt
+          pip-audit --requirement requirements.txt \
+            --format json \
+            --output pip-audit-report.json \
+            --strict || true
+
+      - name: Safety scan
+        run: safety check -r requirements.txt --json > safety-report.json || true
+
+      - name: Upload audit reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-${{ github.run_id }}
+          path: |
+            pip-audit-report.json
+            safety-report.json
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────
+  # Docker compose stack smoke test
+  # ─────────────────────────────────────────────────────────────────
+  docker-compose-test:
+    name: Docker Compose Stack Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start stack (local compose)
+        run: |
+          docker compose -f docker-compose.local.yml up -d --build \
+            --scale worker=0     # Skip Celery worker to avoid Ollama dependency
+        env:
+          GITHUB_TOKEN: ""
+          PHANTOMDEV_API_KEY: ""
+          TARGET_REPO: ""
+
+      - name: Wait for API to be healthy
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://localhost/health 2>/dev/null; then
+              echo "✅ API healthy"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+
+      - name: API smoke tests
+        run: |
+          # Health check
+          curl -sf http://localhost/health | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); assert d['status']=='ok'"
+
+          # Create task (no LLM — just checks API layer)
+          curl -sf -X POST http://localhost/tasks \
+            -H 'Content-Type: application/json' \
+            -d '{"title":"CI test task","body":"Test issue body"}' | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); assert 'task_id' in d"
+
+          echo "✅ All smoke tests passed"
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.local.yml logs --tail=100
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f docker-compose.local.yml down -v

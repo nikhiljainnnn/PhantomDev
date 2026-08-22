@@ -1,0 +1,216 @@
+name: CD — Build & Deploy to Render
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*.*.*"
+
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: "Force redeploy even if no code changes"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false   # never cancel in-flight deploys
+
+env:
+  PYTHON_VERSION: "3.11"
+
+# ──────────────────────────────────────────────────────────────────────
+# HOW RENDER DEPLOYS WORK
+# ──────────────────────────────────────────────────────────────────────
+# Render watches your GitHub repo and auto-deploys on push to main.
+# This workflow adds:
+#   1. A CI gate (tests must pass before deploy is triggered)
+#   2. Explicit deploy triggers via Render's Deploy Hook URL
+#   3. A smoke test after deploy completes
+#
+# SETUP (one-time):
+#   1. Create your services on render.com:
+#        - "api"    → Web Service (Docker)  → points to infra/Dockerfile
+#        - "worker" → Background Worker     → same Dockerfile, command override
+#        - "redis"  → Redis instance (free tier available)
+#   2. In Render dashboard: Settings → Deploy Hook → copy the URL
+#   3. Add it as a GitHub secret:
+#        RENDER_DEPLOY_HOOK_API    → URL for the api service
+#        RENDER_DEPLOY_HOOK_WORKER → URL for the worker service
+#   4. Set environment variables in Render dashboard (not here):
+#        GITHUB_TOKEN, TARGET_REPO, PHANTOMDEV_API_KEY, etc.
+#   5. Set RENDER_APP_URL secret → e.g. https://phantomdev.onrender.com
+# ──────────────────────────────────────────────────────────────────────
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # 1. CI gate — tests must pass before any deploy
+  # ─────────────────────────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    uses: ./.github/workflows/ci.yml
+
+  # ─────────────────────────────────────────────────────────────────
+  # 2. Trigger Render deploy via Deploy Hook
+  #    Render will pull the latest commit from GitHub and rebuild.
+  #    No Docker registry, no SSH, no cloud credentials needed.
+  # ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: ci-gate
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      url: ${{ secrets.RENDER_APP_URL }}
+
+    steps:
+      - name: Trigger Render deploy — API service
+        run: |
+          echo "🚀 Triggering Render deploy for API..."
+          response=$(curl -sf -X POST "${{ secrets.RENDER_DEPLOY_HOOK_API }}" \
+            -w "\n%{http_code}" -o /tmp/render_api_response.txt)
+          http_code=$(echo "$response" | tail -n1)
+          body=$(cat /tmp/render_api_response.txt)
+
+          echo "Response: $body"
+          if [ "$http_code" -ne 200 ] && [ "$http_code" -ne 201 ]; then
+            echo "::error::Render API deploy hook failed (HTTP $http_code)"
+            exit 1
+          fi
+          echo "✅ API deploy triggered"
+
+      - name: Trigger Render deploy — Worker service
+        # Worker is optional — skip if secret not set
+        if: secrets.RENDER_DEPLOY_HOOK_WORKER != ''
+        run: |
+          echo "🚀 Triggering Render deploy for Worker..."
+          response=$(curl -sf -X POST "${{ secrets.RENDER_DEPLOY_HOOK_WORKER }}" \
+            -w "\n%{http_code}" -o /tmp/render_worker_response.txt)
+          http_code=$(echo "$response" | tail -n1)
+          body=$(cat /tmp/render_worker_response.txt)
+
+          echo "Response: $body"
+          if [ "$http_code" -ne 200 ] && [ "$http_code" -ne 201 ]; then
+            echo "::warning::Render Worker deploy hook failed (HTTP $http_code) — continuing"
+          else
+            echo "✅ Worker deploy triggered"
+          fi
+
+      # ── Wait for Render to finish building & deploying ──────────────
+      # Render free tier typically takes 3-6 minutes to build + deploy.
+      # We poll the /health endpoint until it's up or we time out.
+      - name: Wait for deploy to be healthy
+        run: |
+          APP_URL="${{ secrets.RENDER_APP_URL }}"
+          MAX_WAIT=360     # 6 minutes
+          INTERVAL=15      # poll every 15s
+          elapsed=0
+
+          echo "⏳ Waiting for $APP_URL/health to respond..."
+
+          while [ $elapsed -lt $MAX_WAIT ]; do
+            sleep $INTERVAL
+            elapsed=$((elapsed + INTERVAL))
+
+            if curl -sf "$APP_URL/health" --max-time 10 > /tmp/health.json 2>/dev/null; then
+              status=$(python3 -c "import json,sys; d=json.load(open('/tmp/health.json')); print(d.get('status',''))")
+              if [ "$status" = "ok" ]; then
+                echo "✅ Service healthy after ${elapsed}s"
+                cat /tmp/health.json
+                break
+              fi
+            fi
+
+            echo "  Not ready yet... (${elapsed}s elapsed)"
+          done
+
+          if [ $elapsed -ge $MAX_WAIT ]; then
+            echo "::error::Deploy timed out after ${MAX_WAIT}s — check Render dashboard"
+            exit 1
+          fi
+
+      # ── Smoke test key endpoints ─────────────────────────────────────
+      - name: Smoke test
+        run: |
+          APP_URL="${{ secrets.RENDER_APP_URL }}"
+
+          echo "🔍 Running smoke tests on $APP_URL..."
+
+          # 1. Health check
+          python3 -c "
+          import json, urllib.request, sys
+          req = urllib.request.Request('$APP_URL/health')
+          with urllib.request.urlopen(req, timeout=15) as r:
+              d = json.load(r)
+          assert d['status'] == 'ok', f'Health check failed: {d}'
+          print(f\"✅ Health: {d}\")
+          "
+
+          # 2. Create a test task (just verifies the API layer, no LLM call)
+          python3 -c "
+          import json, urllib.request, sys
+
+          data = json.dumps({'title': 'CI smoke test', 'body': 'Automated smoke test from GitHub Actions'}).encode()
+          headers = {'Content-Type': 'application/json'}
+
+          # Add API key header if configured
+          api_key = '${{ secrets.PHANTOMDEV_API_KEY }}'
+          if api_key:
+              headers['X-API-Key'] = api_key
+
+          req = urllib.request.Request('$APP_URL/tasks', data=data, headers=headers, method='POST')
+          try:
+              with urllib.request.urlopen(req, timeout=15) as r:
+                  d = json.load(r)
+              assert 'task_id' in d, f'No task_id in response: {d}'
+              print(f\"✅ Task creation: task_id={d['task_id']}\")
+          except urllib.error.HTTPError as e:
+              # 401 = API key mismatch, expected if key not set in secret
+              if e.code == 401:
+                  print('⚠️  API key required — set PHANTOMDEV_API_KEY secret to test this')
+              else:
+                  raise
+          "
+
+          echo "✅ All smoke tests passed"
+
+      # ── Post deploy summary ──────────────────────────────────────────
+      - name: Deploy summary
+        if: always()
+        run: |
+          echo "### 🚀 Render Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch/Tag | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| App URL | ${{ secrets.RENDER_APP_URL }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────
+  # 3. Create a GitHub Release on version tags
+  # ─────────────────────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            ## PhantomDev ${{ github.ref_name }}
+
+            🌐 **Live at:** ${{ secrets.RENDER_APP_URL }}
+
+            Deployed automatically to Render on tag push.
+            Passed CI gate (lint + tests + security scan) before deploy.

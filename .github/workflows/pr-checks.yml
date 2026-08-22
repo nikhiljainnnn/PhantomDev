@@ -1,0 +1,121 @@
+name: PR Quality Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Automatically label PRs by changed paths
+  # ─────────────────────────────────────────────────────────────────
+  label:
+    name: Label PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
+
+  # ─────────────────────────────────────────────────────────────────
+  # Auto-assign reviewers based on CODEOWNERS
+  # ─────────────────────────────────────────────────────────────────
+  assign:
+    name: Assign Reviewers
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: kentaro-m/auto-assign-action@v2.0.0
+        with:
+          configuration-path: .github/auto_assign.yml
+
+  # ─────────────────────────────────────────────────────────────────
+  # Enforce PR title follows Conventional Commits
+  # ─────────────────────────────────────────────────────────────────
+  pr-title:
+    name: Validate PR Title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # Post test coverage diff comment on PR
+  # ─────────────────────────────────────────────────────────────────
+  coverage-comment:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run coverage
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          WORKSPACE_DIR: /tmp/phantomdev_test
+          CHROMA_PERSIST_DIR: /tmp/phantomdev_chroma
+          SANDBOX_DIR: /tmp/phantomdev_sandbox
+          USE_CELERY: "false"
+        run: |
+          pytest tests/ \
+            --cov=agents --cov=api --cov=orchestrator --cov=worker \
+            --cov-report=xml --cov-report=term-missing \
+            -q || true
+
+      - name: Post coverage comment
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MINIMUM_GREEN: 80
+          MINIMUM_ORANGE: 60
+          ANNOTATE_MISSING_LINES: true
+          ANNOTATION_TYPE: warning
+
+  # ─────────────────────────────────────────────────────────────────
+  # Block merge if PR targets wrong base branch
+  # ─────────────────────────────────────────────────────────────────
+  check-base-branch:
+    name: Validate Base Branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block direct PRs to main
+        if: github.base_ref == 'main' && !startsWith(github.head_ref, 'release/')
+        run: |
+          echo "::error::Direct PRs to main are not allowed. Target the develop branch instead, or use a release/* branch."
+          exit 1
