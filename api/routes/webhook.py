@@ -52,7 +52,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
         repo = payload.get("repository", {})
         
         # Check if it has 'phantomdev' label when opened
-        labels = [l.get("name") for l in issue.get("labels", [])]
+        labels = [label.get("name") for label in issue.get("labels", [])]
         if action in ["opened", "labeled"] and "phantomdev" in labels:
             logger.info(f"Triggering pipeline from issue #{issue.get('number')}")
             await dispatch_pipeline(issue, repo, background_tasks)

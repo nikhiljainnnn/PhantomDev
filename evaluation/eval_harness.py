@@ -48,7 +48,7 @@ def evaluate_task(state: TaskState) -> dict:
     total_lines = 0
     file_count = 0
     for content in state.generated_files.values():
-        lines = [l for l in content.splitlines() if l.strip() and not l.strip().startswith("#")]
+        lines = [line for line in content.splitlines() if line.strip() and not line.strip().startswith("#")]
         total_lines += len(lines)
         file_count += 1
     avg_lines = total_lines / file_count if file_count > 0 else 0

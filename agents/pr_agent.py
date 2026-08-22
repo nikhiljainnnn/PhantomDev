@@ -122,16 +122,15 @@ def _create_pr(state: TaskState) -> str:
     
             for file_path, content in all_files.items():
                 try:
-                    encoded = base64.b64encode(content.encode()).decode()
                     try:
                         existing = repo.get_contents(file_path, ref=branch_name)
                         repo.update_file(
-                            file_path, f"update {file_path}", content,
+                            file_path, commit_message, content,
                             existing.sha, branch=branch_name
                         )
                     except GithubException:
                         repo.create_file(
-                            file_path, f"add {file_path}", content,
+                            file_path, commit_message, content,
                             branch=branch_name
                         )
                     logger.info(f"Committed: {file_path}")
