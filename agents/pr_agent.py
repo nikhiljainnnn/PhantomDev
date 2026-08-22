@@ -9,10 +9,9 @@ from __future__ import annotations
 import base64
 import logging
 import os
-import autogen
-from pathlib import Path
 
-from agents.base_agent import PhantomBaseAgent, WORKSPACE
+import autogen
+
 from orchestrator.state import TaskState, TaskStatus
 
 logger = logging.getLogger(__name__)

@@ -3,17 +3,17 @@ api/routes/webhook.py
 ──────────────────────
 GitHub webhook receiver to automatically trigger PhantomDev pipelines.
 """
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
-import hmac
 import hashlib
-import os
-import logging
+import hmac
 import json
+import logging
+import os
 
-from orchestrator.state import TaskState
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+
 from api.store import task_store
+from orchestrator.state import TaskState
 from worker.celery_app import run_pipeline
-
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ async def dispatch_pipeline(issue: dict, repo: dict, background_tasks: Backgroun
         base_branch=repo.get("default_branch", "main"),
     )
     await task_store.save(state)
-    from api.main import _run_pipeline_bg, USE_CELERY, websocket_connections
+    from api.main import USE_CELERY, _run_pipeline_bg, websocket_connections
     websocket_connections[state.task_id] = []
 
     if USE_CELERY:

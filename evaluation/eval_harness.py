@@ -10,17 +10,12 @@ Usage:
 """
 from __future__ import annotations
 
-import json
-import os
 import re
-import subprocess
-from pathlib import Path
-from typing import Dict
 
 from orchestrator.state import TaskState
 
 
-def evaluate_task(state: TaskState) -> Dict:
+def evaluate_task(state: TaskState) -> dict:
     """
     Run full evaluation suite on a completed task.
     Returns a scorecard dict.
@@ -94,10 +89,10 @@ def evaluate_task(state: TaskState) -> Dict:
     return scores
 
 
-def print_scorecard(task_id: str, scores: Dict) -> None:
+def print_scorecard(task_id: str, scores: dict) -> None:
     """Pretty-print evaluation results."""
     print(f"\n{'='*60}")
-    print(f"  PhantomDev Evaluation Scorecard")
+    print("  PhantomDev Evaluation Scorecard")
     print(f"  Task: {task_id[:16]}...")
     print(f"{'='*60}")
 

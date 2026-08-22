@@ -13,12 +13,10 @@ from __future__ import annotations
 import argparse
 import ast
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import List, Tuple
 
 CHROMA_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
 EMBED_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
@@ -31,7 +29,7 @@ INCLUDED_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".md", ".yaml", ".ym
 MAX_CHUNK_CHARS = 2000  # Keep chunks small for better retrieval
 
 
-def extract_python_chunks(source: str, filepath: str) -> List[Tuple[str, dict]]:
+def extract_python_chunks(source: str, filepath: str) -> list[tuple[str, dict]]:
     """
     AST-based chunking: extract each function and class as its own chunk.
     Falls back to line-based chunking if AST parsing fails.
@@ -67,7 +65,7 @@ def extract_python_chunks(source: str, filepath: str) -> List[Tuple[str, dict]]:
     return chunks
 
 
-def extract_text_chunks(source: str, filepath: str) -> List[Tuple[str, dict]]:
+def extract_text_chunks(source: str, filepath: str) -> list[tuple[str, dict]]:
     """Simple paragraph-based chunking for non-Python files."""
     chunks = []
     paragraphs = source.split("\n\n")
@@ -171,8 +169,6 @@ if __name__ == "__main__":
     except ImportError:
         print("Installing required packages...")
         subprocess.run([sys.executable, "-m", "pip", "install", "chromadb", "sentence-transformers"], check=True)
-        import chromadb
-        from sentence_transformers import SentenceTransformer
 
     repo_path = clone_if_url(args.repo)
     index_repo(repo_path)

@@ -7,18 +7,15 @@ access from thread executor context is restricted.
 """
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import os
-import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 import autogen
-from autogen import GroupChat, GroupChatManager
-import asyncio
-
 import openai
+from autogen import GroupChat, GroupChatManager
 from langsmith import wrappers
 
 # Patch OpenAI clients so LangSmith tracing picks up AutoGen calls automatically.
@@ -34,14 +31,14 @@ def _patched_async_init(self, *args, **kwargs):
     wrappers.wrap_openai(self)
 openai.AsyncOpenAI.__init__ = _patched_async_init
 
-from orchestrator.state import TaskState, TaskStatus
-from agents.pm_agent import build_pm_agent
 from agents.architect_agent import build_architect_agent
 from agents.engineer_agent import build_engineer_agents
+from agents.pm_agent import build_pm_agent
+from agents.pr_agent import build_pr_agent
 from agents.qa_agent import build_qa_agent
 from agents.security_agent import build_security_agent
 from agents.writer_agent import build_writer_agent
-from agents.pr_agent import build_pr_agent
+from orchestrator.state import TaskState, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +130,7 @@ def _save_state_sync(state: TaskState) -> None:
         logger.warning(f"State save failed: {e}")
 
 
-def load_state_from_file(task_id: str) -> Optional[TaskState]:
+def load_state_from_file(task_id: str) -> TaskState | None:
     """Load task state from the file-based store. Used by the API to get the freshest state."""
     try:
         path = STATE_DIR / f"{task_id}.json"
@@ -146,7 +143,7 @@ def load_state_from_file(task_id: str) -> Optional[TaskState]:
 
 class PhantomDevOrchestrator:
 
-    def __init__(self, on_update: Optional[Callable] = None):
+    def __init__(self, on_update: Callable | None = None):
         self._on_update_cb = on_update
         self.llm_config = get_llm_config()
 

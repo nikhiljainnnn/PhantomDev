@@ -1,44 +1,22 @@
-import pytest
-from datetime import datetime, timedelta
-from orchestrator.state import TaskState
+from orchestrator.state import TaskState, TaskStatus
 
-def test_task_state_update_status_terminal():
+
+def test_task_state_set_status():
     """
-    Test that updating the status to a terminal status sets the end_time attribute.
+    Test that setting the status updates the updated_at attribute.
     """
     task_state = TaskState()
-    task_state.update_status("PR_OPEN")
-    assert task_state.end_time is not None
-    current_time = datetime.now()
-    end_time = datetime.fromisoformat(task_state.end_time)
-    assert (current_time - end_time) < timedelta(seconds=1)
+    initial_updated_at = task_state.updated_at
+    
+    task_state.set_status(TaskStatus.PR_OPEN)
+    assert task_state.status == TaskStatus.PR_OPEN
+    assert task_state.updated_at != initial_updated_at
 
-def test_task_state_update_status_non_terminal():
+def test_task_state_fail():
     """
-    Test that updating the status to a non-terminal status does not set the end_time attribute.
+    Test fail method.
     """
     task_state = TaskState()
-    task_state.update_status("IN_PROGRESS")
-    assert task_state.end_time is None
-
-def test_task_state_update_status_terminal_multiple():
-    """
-    Test that updating the status to multiple terminal statuses sets the end_time attribute correctly.
-    """
-    task_state = TaskState()
-    task_state.update_status("PR_OPEN")
-    initial_end_time = task_state.end_time
-    task_state.update_status("FAILED")
-    assert task_state.end_time != initial_end_time
-    current_time = datetime.now()
-    end_time = datetime.fromisoformat(task_state.end_time)
-    assert (current_time - end_time) < timedelta(seconds=1)
-
-def test_task_state_end_time_iso_format():
-    """
-    Test that the end_time attribute is in ISO-8601 format.
-    """
-    task_state = TaskState()
-    task_state.update_status("PR_OPEN")
-    end_time = datetime.fromisoformat(task_state.end_time)
-    assert end_time is not None
+    task_state.fail("Some error")
+    assert task_state.status == TaskStatus.FAILED
+    assert "Some error" in task_state.errors

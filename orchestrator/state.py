@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -34,10 +34,10 @@ class SubTask(BaseModel):
     description: str
     file_path: str          # target file to create/modify
     status: str = "pending" # pending | in_progress | done | failed
-    assigned_to: Optional[str] = None
-    code: Optional[str] = None
-    tests: Optional[str] = None
-    error: Optional[str] = None
+    assigned_to: str | None = None
+    code: str | None = None
+    tests: str | None = None
+    error: str | None = None
 
 
 class SecurityFinding(BaseModel):
@@ -69,45 +69,45 @@ class TaskState(BaseModel):
     updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
 
     # ── Input ────────────────────────────────────────────────────────────
-    github_issue_number: Optional[int] = None
+    github_issue_number: int | None = None
     github_issue_title: str = ""
     github_issue_body: str = ""
     target_repo: str = ""
     base_branch: str = "main"
 
     # ── Planning outputs ─────────────────────────────────────────────────
-    requirements: List[str] = []
-    acceptance_criteria: List[str] = []
-    subtasks: List[SubTask] = []
+    requirements: list[str] = []
+    acceptance_criteria: list[str] = []
+    subtasks: list[SubTask] = []
 
     # ── Architecture outputs ─────────────────────────────────────────────
     architecture_notes: str = ""
     api_contracts: str = ""          # OpenAPI YAML snippets
-    tech_decisions: List[str] = []
+    tech_decisions: list[str] = []
 
     # ── Generated artifacts ──────────────────────────────────────────────
-    generated_files: Dict[str, str] = {}   # path → code content
-    test_files: Dict[str, str] = {}         # path → test content
+    generated_files: dict[str, str] = {}   # path → code content
+    test_files: dict[str, str] = {}         # path → test content
     documentation: str = ""
 
     # ── QA outputs ──────────────────────────────────────────────────────
-    test_results: Dict[str, Any] = {}
+    test_results: dict[str, Any] = {}
     coverage_report: str = ""
 
     # ── Security outputs ─────────────────────────────────────────────────
-    security_findings: List[SecurityFinding] = []
+    security_findings: list[SecurityFinding] = []
 
     # ── PR ───────────────────────────────────────────────────────────────
     branch_name: str = ""
     pr_url: str = ""
-    pr_number: Optional[int] = None
+    pr_number: int | None = None
     pr_body: str = ""
 
     # ── Workflow ─────────────────────────────────────────────────────────
     status: TaskStatus = TaskStatus.PENDING
     current_agent: str = ""
-    agent_messages: List[Dict[str, str]] = []  # for WebSocket streaming
-    errors: List[str] = []
+    agent_messages: list[dict[str, str]] = []  # for WebSocket streaming
+    errors: list[str] = []
 
     # ── Evaluation ───────────────────────────────────────────────────────
     metrics: EvalMetrics = Field(default_factory=EvalMetrics)

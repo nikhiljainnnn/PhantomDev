@@ -1,6 +1,8 @@
 import os
 import tempfile
+
 from create_phantom_test_file import create_phantom_test_file
+
 
 def test_create_phantom_test_file():
     # Create a temporary directory

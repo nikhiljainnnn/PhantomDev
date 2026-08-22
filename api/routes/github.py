@@ -3,10 +3,10 @@ api/routes/github.py
 ────────────────────
 API endpoints for GitHub interactions from the frontend.
 """
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional
-import logging
 
 from tools.github_tools import fetch_issue
 

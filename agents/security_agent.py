@@ -10,7 +10,6 @@ import json
 import logging
 import subprocess
 from pathlib import Path
-from typing import List
 
 from agents.base_agent import PhantomBaseAgent
 from orchestrator.state import SecurityFinding, TaskState, TaskStatus
@@ -55,6 +54,7 @@ Available tools:
 """
 
 import os
+
 FAIL_ON_HIGH = os.getenv("FAIL_ON_HIGH_SEVERITY", "true").lower() == "true"
 
 
@@ -172,7 +172,7 @@ def _bandit_and_persist(state: TaskState) -> str:
     result_str = run_bandit()
     result = json.loads(result_str)
 
-    findings: List[SecurityFinding] = []
+    findings: list[SecurityFinding] = []
     for f in result.get("findings", []):
         findings.append(SecurityFinding(**f))
 

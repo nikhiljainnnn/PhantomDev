@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 
-from agents.base_agent import PhantomBaseAgent, rag_search
+from agents.base_agent import PhantomBaseAgent
 from orchestrator.state import TaskState, TaskStatus
 
 logger = logging.getLogger(__name__)

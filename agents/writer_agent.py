@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import logging
 
-from agents.base_agent import PhantomBaseAgent, list_workspace_files, read_workspace_file
+from agents.base_agent import (
+    PhantomBaseAgent,
+    list_workspace_files,
+    read_workspace_file,
+)
 from orchestrator.state import TaskState
 
 logger = logging.getLogger(__name__)

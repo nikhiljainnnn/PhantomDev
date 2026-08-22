@@ -14,8 +14,6 @@ Monitor:
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
 import os
 
 from celery import Celery
@@ -78,8 +76,8 @@ def run_pipeline(self, task_id: str, state_json: str) -> dict:
     Receives serialised TaskState JSON, runs the full pipeline,
     saves result back to Redis.
     """
-    from orchestrator.state import TaskState, TaskStatus
     from orchestrator.group_chat import PhantomDevOrchestrator
+    from orchestrator.state import TaskState
 
     logger.info(f"Worker starting pipeline for task {task_id}")
 

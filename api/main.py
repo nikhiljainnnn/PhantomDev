@@ -12,18 +12,27 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import APIKeyHeader
+from fastapi.staticfiles import StaticFiles
 
 from api.models import CreateTaskRequest, TaskResponse
-from api.store import task_store
-from orchestrator.state import TaskState, TaskStatus
-
 from api.routes.github import router as github_router
 from api.routes.webhook import router as webhook_router
+from api.store import task_store
+from orchestrator.state import TaskState, TaskStatus
 
 # Structured JSON logging
 logging.basicConfig(
@@ -38,12 +47,12 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 USE_CELERY      = os.getenv("USE_CELERY", "true").lower() == "true"
 
 # In-process WebSocket registry — not persisted across restarts
-websocket_connections: Dict[str, List[WebSocket]] = {}
+websocket_connections: dict[str, list[WebSocket]] = {}
 
 # API key auth
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-async def verify_api_key(key: Optional[str] = Depends(api_key_header)) -> None:
+async def verify_api_key(key: str | None = Depends(api_key_header)) -> None:
     if not API_KEY:
         return
     if key != API_KEY:
@@ -52,7 +61,7 @@ async def verify_api_key(key: Optional[str] = Depends(api_key_header)) -> None:
 
 # ── GitHub PR helpers ──────────────────────────────────────────────────────────
 
-def _merge_github_pr(state: TaskState) -> tuple[bool, Optional[str]]:
+def _merge_github_pr(state: TaskState) -> tuple[bool, str | None]:
     """
     Squash-merge the GitHub PR associated with this task.
     Returns (success: bool, error_message: str | None)
@@ -109,7 +118,7 @@ def _merge_github_pr(state: TaskState) -> tuple[bool, Optional[str]]:
         return False, msg
 
 
-def _close_github_pr(state: TaskState, reason: str) -> tuple[bool, Optional[str]]:
+def _close_github_pr(state: TaskState, reason: str) -> tuple[bool, str | None]:
     """
     Close the GitHub PR with a rejection comment.
     Returns (success: bool, error_message: str | None)
@@ -347,10 +356,10 @@ async def reject_pr(task_id: str, reason: str = ""):
 
 
 @app.post("/webhook/github")
-async def github_webhook(payload: Dict[str, Any], background_tasks: BackgroundTasks):
+async def github_webhook(payload: dict[str, Any], background_tasks: BackgroundTasks):
     event_type = payload.get("action", "")
     issue = payload.get("issue", {})
-    labels = [l.get("name", "") for l in issue.get("labels", [])]
+    labels = [label.get("name", "") for label in issue.get("labels", [])]
     if event_type == "labeled" and "phantomdev" in labels:
         state = TaskState(
             github_issue_number=issue.get("number"),
@@ -435,7 +444,7 @@ async def _run_pipeline_bg(task_id: str) -> None:
 
 
 # ── File-state bridge ──────────────────────────────────────────────────────────
-async def _get_fresh_state(task_id: str) -> Optional[TaskState]:
+async def _get_fresh_state(task_id: str) -> TaskState | None:
     redis_state = await task_store.get(task_id)
 
     try:
@@ -475,8 +484,6 @@ async def _broadcast(task_id: str, state: TaskState) -> None:
 
 
 # ── Serve React Frontend ───────────────────────────────────────────────────────
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 _frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 

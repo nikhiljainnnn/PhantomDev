@@ -13,10 +13,8 @@ Usage:
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
-from typing import List, Optional
 
 import redis.asyncio as aioredis
 
@@ -37,7 +35,7 @@ class RedisTaskStore:
     """
 
     def __init__(self):
-        self._redis: Optional[aioredis.Redis] = None
+        self._redis: aioredis.Redis | None = None
         self._fallback: dict[str, TaskState] = {}
         self._use_fallback = False
 
@@ -73,7 +71,7 @@ class RedisTaskStore:
             logger.error(f"Redis save failed for {state.task_id}: {e}")
             self._fallback[state.task_id] = state
 
-    async def get(self, task_id: str) -> Optional[TaskState]:
+    async def get(self, task_id: str) -> TaskState | None:
         """Load a TaskState from Redis."""
         if self._use_fallback:
             return self._fallback.get(task_id)
@@ -87,7 +85,7 @@ class RedisTaskStore:
             logger.error(f"Redis get failed for {task_id}: {e}")
             return self._fallback.get(task_id)
 
-    async def list_all(self) -> List[TaskState]:
+    async def list_all(self) -> list[TaskState]:
         """Return all tasks sorted by created_at descending."""
         if self._use_fallback:
             return sorted(self._fallback.values(), key=lambda t: t.created_at, reverse=True)

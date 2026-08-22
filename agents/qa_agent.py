@@ -25,7 +25,6 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from agents.base_agent import PhantomBaseAgent, list_workspace_files
 from orchestrator.state import TaskState, TaskStatus
@@ -127,11 +126,11 @@ def _run_tests_kubernetes(workspace: str) -> dict:
                             "sh", "-c",
                             (
                                 "pip install pytest pytest-cov --quiet && "
-                                f"cd /code && "
-                                f"python -m pytest /code --tb=short "
-                                f"--cov=/code --cov-report=json "
-                                f"--cov-report=term-missing -q --no-header "
-                                f"2>&1 || true"
+                                "cd /code && "
+                                "python -m pytest /code --tb=short "
+                                "--cov=/code --cov-report=json "
+                                "--cov-report=term-missing -q --no-header "
+                                "2>&1 || true"
                             )
                         ],
                         "resources": {

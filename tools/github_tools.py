@@ -3,9 +3,9 @@ tools/github_tools.py
 ──────────────────────
 Wrapper around PyGithub for fetching issues and comments.
 """
-import os
 import logging
-from typing import Dict, Any, Optional
+import os
+from typing import Any, Optional
 
 try:
     from github import Github, GithubException
@@ -20,7 +20,7 @@ def get_github_client() -> Optional['Github']:
         return None
     return Github(token)
 
-def fetch_issue(repo_name: str, issue_number: int) -> Dict[str, Any]:
+def fetch_issue(repo_name: str, issue_number: int) -> dict[str, Any]:
     """
     Fetches an issue from GitHub and returns its title and body.
     Raises ValueError if GitHub is not configured or issue not found.
