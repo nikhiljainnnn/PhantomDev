@@ -4,6 +4,7 @@ agents/writer_agent.py
 Tech Writer Agent. Reads all generated files and produces a PR description
 in GitHub Markdown format, ready for human review.
 """
+
 from __future__ import annotations
 
 import logging
@@ -59,11 +60,13 @@ def build_writer_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
         state=state,
     )
 
-    agent.register_function(function_map={
-        "list_files": list_workspace_files,
-        "read_file": read_workspace_file,
-        "save_pr_body": lambda body, _state=state: _save_pr_body(body, _state),
-    })
+    agent.register_function(
+        function_map={
+            "list_files": list_workspace_files,
+            "read_file": read_workspace_file,
+            "save_pr_body": lambda body, _state=state: _save_pr_body(body, _state),
+        }
+    )
 
     original_generate = agent.generate_reply
 
@@ -71,6 +74,7 @@ def build_writer_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
         reply = original_generate(messages=messages, sender=sender, **kwargs)
         if reply and isinstance(reply, str):
             import re
+
             match = re.search(r"```markdown\s*(.*?)\s*```", reply, re.DOTALL)
             if match:
                 state.documentation = match.group(1).strip()

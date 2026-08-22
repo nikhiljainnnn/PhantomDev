@@ -4,6 +4,7 @@ agents/security_agent.py
 Security Agent. Runs Bandit (SAST) and Safety (dependency vulnerability check)
 on all generated code. Blocks PR creation if any HIGH severity findings exist.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,6 +62,7 @@ FAIL_ON_HIGH = os.getenv("FAIL_ON_HIGH_SEVERITY", "true").lower() == "true"
 def run_bandit() -> str:
     """Run Bandit SAST on workspace Python files."""
     from agents.base_agent import WORKSPACE
+
     workspace = str(WORKSPACE)
 
     py_files = list(Path(workspace).rglob("*.py"))
@@ -77,7 +79,13 @@ def run_bandit() -> str:
 
         raw = result.stdout.strip()
         if not raw:
-            return json.dumps({"status": "clean", "findings": [], "counts": {"HIGH": 0, "MEDIUM": 0, "LOW": 0}})
+            return json.dumps(
+                {
+                    "status": "clean",
+                    "findings": [],
+                    "counts": {"HIGH": 0, "MEDIUM": 0, "LOW": 0},
+                }
+            )
 
         data = json.loads(raw)
         findings_raw = data.get("results", [])
@@ -87,23 +95,31 @@ def run_bandit() -> str:
         for f in findings_raw:
             sev = f.get("issue_severity", "LOW").upper()
             counts[sev] = counts.get(sev, 0) + 1
-            findings.append({
-                "severity": sev,
-                "test_id": f.get("test_id", ""),
-                "issue_text": f.get("issue_text", ""),
-                "line_number": f.get("line_number", 0),
-                "filename": f.get("filename", ""),
-            })
+            findings.append(
+                {
+                    "severity": sev,
+                    "test_id": f.get("test_id", ""),
+                    "issue_text": f.get("issue_text", ""),
+                    "line_number": f.get("line_number", 0),
+                    "filename": f.get("filename", ""),
+                }
+            )
 
-        return json.dumps({
-            "status": "blocked" if counts.get("HIGH", 0) > 0 and FAIL_ON_HIGH else "clear",
-            "findings": findings,
-            "counts": counts,
-        })
+        return json.dumps(
+            {
+                "status": "blocked"
+                if counts.get("HIGH", 0) > 0 and FAIL_ON_HIGH
+                else "clear",
+                "findings": findings,
+                "counts": counts,
+            }
+        )
 
     except FileNotFoundError:
         logger.warning("Bandit not installed. Install: pip install bandit")
-        return json.dumps({"status": "unavailable", "message": "bandit not installed", "findings": []})
+        return json.dumps(
+            {"status": "unavailable", "message": "bandit not installed", "findings": []}
+        )
     except Exception as e:
         logger.error(f"Bandit error: {e}")
         return json.dumps({"status": "error", "message": str(e), "findings": []})
@@ -113,6 +129,7 @@ def run_safety() -> str:
     """Check for vulnerable dependencies with Safety."""
     req_files = []
     from agents.base_agent import WORKSPACE
+
     for path in Path(WORKSPACE).rglob("requirements*.txt"):
         req_files.append(str(path))
 
@@ -130,19 +147,21 @@ def run_safety() -> str:
         raw = result.stdout.strip() or "[]"
         vulns = json.loads(raw) if raw.startswith("[") else []
 
-        return json.dumps({
-            "status": "vulnerable" if vulns else "clean",
-            "count": len(vulns),
-            "vulnerabilities": [
-                {
-                    "package": v[0] if len(v) > 0 else "",
-                    "affected": v[1] if len(v) > 1 else "",
-                    "installed": v[2] if len(v) > 2 else "",
-                    "description": v[3] if len(v) > 3 else "",
-                }
-                for v in vulns[:10]
-            ],
-        })
+        return json.dumps(
+            {
+                "status": "vulnerable" if vulns else "clean",
+                "count": len(vulns),
+                "vulnerabilities": [
+                    {
+                        "package": v[0] if len(v) > 0 else "",
+                        "affected": v[1] if len(v) > 1 else "",
+                        "installed": v[2] if len(v) > 2 else "",
+                        "description": v[3] if len(v) > 3 else "",
+                    }
+                    for v in vulns[:10]
+                ],
+            }
+        )
 
     except FileNotFoundError:
         return json.dumps({"status": "unavailable", "message": "safety not installed"})
@@ -159,10 +178,12 @@ def build_security_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent
         state=state,
     )
 
-    agent.register_function(function_map={
-        "run_bandit": lambda: _bandit_and_persist(state),
-        "run_safety": run_safety,
-    })
+    agent.register_function(
+        function_map={
+            "run_bandit": lambda: _bandit_and_persist(state),
+            "run_safety": run_safety,
+        }
+    )
 
     return agent
 
@@ -184,13 +205,13 @@ def _bandit_and_persist(state: TaskState) -> str:
     if result.get("status") == "blocked":
         state.add_message(
             "SecurityAgent",
-            f"🚨 BLOCKED: {counts.get('HIGH', 0)} HIGH severity findings"
+            f"🚨 BLOCKED: {counts.get('HIGH', 0)} HIGH severity findings",
         )
     else:
         state.set_status(TaskStatus.DOCUMENTING)
         state.add_message(
             "SecurityAgent",
-            f"✅ Clear: 0 HIGH | {counts.get('MEDIUM', 0)} MEDIUM | {counts.get('LOW', 0)} LOW"
+            f"✅ Clear: 0 HIGH | {counts.get('MEDIUM', 0)} MEDIUM | {counts.get('LOW', 0)} LOW",
         )
 
     return result_str

@@ -8,6 +8,7 @@ Usage:
     python scripts/index_codebase.py --repo ./path/to/your/repo
     python scripts/index_codebase.py --repo https://github.com/owner/repo  (auto-clone)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,8 +23,17 @@ CHROMA_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
 EMBED_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
 EXCLUDED_DIRS = {
-    ".git", "__pycache__", "node_modules", ".venv", "venv",
-    "env", ".env", "dist", "build", ".pytest_cache", "migrations",
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "env",
+    ".env",
+    "dist",
+    "build",
+    ".pytest_cache",
+    "migrations",
 }
 INCLUDED_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".md", ".yaml", ".yml"}
 MAX_CHUNK_CHARS = 2000  # Keep chunks small for better retrieval
@@ -45,12 +55,21 @@ def extract_python_chunks(source: str, filepath: str) -> list[tuple[str, dict]]:
                 end = getattr(node, "end_lineno", start + 20)
                 chunk = "\n".join(lines[start:end])
                 if len(chunk) > 50:
-                    chunks.append((chunk[:MAX_CHUNK_CHARS], {
-                        "source": filepath,
-                        "type": "function" if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else "class",
-                        "name": node.name,
-                        "start_line": start + 1,
-                    }))
+                    chunks.append(
+                        (
+                            chunk[:MAX_CHUNK_CHARS],
+                            {
+                                "source": filepath,
+                                "type": "function"
+                                if isinstance(
+                                    node, (ast.FunctionDef, ast.AsyncFunctionDef)
+                                )
+                                else "class",
+                                "name": node.name,
+                                "start_line": start + 1,
+                            },
+                        )
+                    )
     except SyntaxError:
         pass
 
@@ -58,9 +77,11 @@ def extract_python_chunks(source: str, filepath: str) -> list[tuple[str, dict]]:
     if not chunks:
         lines = source.splitlines()
         for i in range(0, len(lines), 50):
-            chunk = "\n".join(lines[i:i+50])
+            chunk = "\n".join(lines[i : i + 50])
             if chunk.strip():
-                chunks.append((chunk, {"source": filepath, "type": "block", "start_line": i + 1}))
+                chunks.append(
+                    (chunk, {"source": filepath, "type": "block", "start_line": i + 1})
+                )
 
     return chunks
 
@@ -71,7 +92,12 @@ def extract_text_chunks(source: str, filepath: str) -> list[tuple[str, dict]]:
     paragraphs = source.split("\n\n")
     for i, para in enumerate(paragraphs):
         if para.strip() and len(para) > 30:
-            chunks.append((para[:MAX_CHUNK_CHARS], {"source": filepath, "type": "text", "paragraph": i}))
+            chunks.append(
+                (
+                    para[:MAX_CHUNK_CHARS],
+                    {"source": filepath, "type": "text", "paragraph": i},
+                )
+            )
     return chunks
 
 
@@ -134,8 +160,12 @@ def index_repo(repo_path: str) -> None:
 
             # Batch upsert every 100 chunks
             if len(all_chunks) >= 100:
-                collection.upsert(documents=all_chunks, metadatas=all_metas, ids=all_ids)
-                print(f"  ↑ Upserted {len(all_chunks)} chunks (total so far: {chunk_id})")
+                collection.upsert(
+                    documents=all_chunks, metadatas=all_metas, ids=all_ids
+                )
+                print(
+                    f"  ↑ Upserted {len(all_chunks)} chunks (total so far: {chunk_id})"
+                )
                 all_chunks, all_metas, all_ids = [], [], []
 
         except Exception as e:
@@ -159,7 +189,9 @@ def clone_if_url(repo_arg: str) -> str:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Index a codebase into ChromaDB for PhantomDev")
+    parser = argparse.ArgumentParser(
+        description="Index a codebase into ChromaDB for PhantomDev"
+    )
     parser.add_argument("--repo", required=True, help="Path to repo dir or GitHub URL")
     args = parser.parse_args()
 
@@ -168,7 +200,17 @@ if __name__ == "__main__":
         from sentence_transformers import SentenceTransformer
     except ImportError:
         print("Installing required packages...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "chromadb", "sentence-transformers"], check=True)
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "chromadb",
+                "sentence-transformers",
+            ],
+            check=True,
+        )
 
     repo_path = clone_if_url(args.repo)
     index_repo(repo_path)

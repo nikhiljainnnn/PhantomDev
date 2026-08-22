@@ -11,6 +11,7 @@ Usage:
     state = await task_store.get(task_id)
     tasks = await task_store.list_all()
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,9 +24,9 @@ from orchestrator.state import TaskState
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-TASK_TTL_SECONDS = 60 * 60 * 24 * 7   # 7 days
+TASK_TTL_SECONDS = 60 * 60 * 24 * 7  # 7 days
 TASK_PREFIX = "phantomdev:task:"
-TASK_INDEX  = "phantomdev:task_ids"
+TASK_INDEX = "phantomdev:task_ids"
 
 
 class RedisTaskStore:
@@ -88,7 +89,9 @@ class RedisTaskStore:
     async def list_all(self) -> list[TaskState]:
         """Return all tasks sorted by created_at descending."""
         if self._use_fallback:
-            return sorted(self._fallback.values(), key=lambda t: t.created_at, reverse=True)
+            return sorted(
+                self._fallback.values(), key=lambda t: t.created_at, reverse=True
+            )
         try:
             task_ids = await self._redis.smembers(TASK_INDEX)
             if not task_ids:

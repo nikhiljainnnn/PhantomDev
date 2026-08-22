@@ -4,6 +4,7 @@ agents/architect_agent.py
 Architect Agent. Reviews PM subtasks and codebase RAG context,
 then produces a system design and API contracts for the engineers to follow.
 """
+
 from __future__ import annotations
 
 import logging
@@ -82,7 +83,9 @@ def _parse_and_persist(reply: str, state: TaskState) -> None:
         state.api_contracts = api_match.group(1).strip()
 
     # Pull tech decisions
-    td_match = re.search(r"## Tech Decisions\s*(.*?)(?=##|ArchitectAgent done|$)", reply, re.DOTALL)
+    td_match = re.search(
+        r"## Tech Decisions\s*(.*?)(?=##|ArchitectAgent done|$)", reply, re.DOTALL
+    )
     if td_match:
         decisions = []
         for line in td_match.group(1).strip().splitlines():
@@ -92,5 +95,8 @@ def _parse_and_persist(reply: str, state: TaskState) -> None:
         state.tech_decisions = decisions
 
     state.set_status(TaskStatus.CODING)
-    state.add_message("ArchitectAgent", f"✅ Architecture defined: {len(state.tech_decisions)} decisions")
+    state.add_message(
+        "ArchitectAgent",
+        f"✅ Architecture defined: {len(state.tech_decisions)} decisions",
+    )
     logger.info(f"ArchitectAgent persisted: {len(state.tech_decisions)} tech decisions")

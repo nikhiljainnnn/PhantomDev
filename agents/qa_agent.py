@@ -14,6 +14,7 @@ Security constraints applied in all sandbox modes:
   - Workspace mounted read-write (pytest-cov needs to write .coverage files)
   - Memory capped at 512 MB, CPU at 0.5 cores, timeout 120 s
 """
+
 from __future__ import annotations
 
 import json
@@ -87,15 +88,18 @@ def _run_tests_kubernetes(workspace: str) -> dict:
     """
     import requests as req
     from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
     req.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
     token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-    ns_path    = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+    ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
-    token     = Path(token_path).read_text().strip()
-    namespace = Path(ns_path).read_text().strip() if Path(ns_path).exists() else "phantomdev"
-    api_url   = "https://kubernetes.default.svc"
-    headers   = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    token = Path(token_path).read_text().strip()
+    namespace = (
+        Path(ns_path).read_text().strip() if Path(ns_path).exists() else "phantomdev"
+    )
+    api_url = "https://kubernetes.default.svc"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     job_name = f"pytest-{uuid.uuid4().hex[:8]}"
 
@@ -119,44 +123,54 @@ def _run_tests_kubernetes(workspace: str) -> dict:
                 "spec": {
                     "restartPolicy": "Never",
                     "automountServiceAccountToken": False,
-                    "containers": [{
-                        "name": "pytest",
-                        "image": "python:3.11-slim",
-                        "command": [
-                            "sh", "-c",
-                            (
-                                "pip install pytest pytest-cov --quiet && "
-                                "cd /code && "
-                                "python -m pytest /code --tb=short "
-                                "--cov=/code --cov-report=json "
-                                "--cov-report=term-missing -q --no-header "
-                                "2>&1 || true"
-                            )
-                        ],
-                        "resources": {
-                            "requests": {"memory": "256Mi", "cpu": "250m"},
-                            "limits":   {"memory": "512Mi", "cpu": "500m"},
-                        },
-                        "volumeMounts": [{
+                    "containers": [
+                        {
+                            "name": "pytest",
+                            "image": "python:3.11-slim",
+                            "command": [
+                                "sh",
+                                "-c",
+                                (
+                                    "pip install pytest pytest-cov --quiet && "
+                                    "cd /code && "
+                                    "python -m pytest /code --tb=short "
+                                    "--cov=/code --cov-report=json "
+                                    "--cov-report=term-missing -q --no-header "
+                                    "2>&1 || true"
+                                ),
+                            ],
+                            "resources": {
+                                "requests": {"memory": "256Mi", "cpu": "250m"},
+                                "limits": {"memory": "512Mi", "cpu": "500m"},
+                            },
+                            "volumeMounts": [
+                                {
+                                    "name": "workspace",
+                                    "mountPath": "/code",
+                                    "subPath": rel_workspace,
+                                }
+                            ],
+                            "env": [],
+                        }
+                    ],
+                    "volumes": [
+                        {
                             "name": "workspace",
-                            "mountPath": "/code",
-                            "subPath": rel_workspace
-                        }],
-                        "env": [],
-                    }],
-                    "volumes": [{
-                        "name": "workspace",
-                        "persistentVolumeClaim": {"claimName": "workspace-pvc"},
-                    }],
+                            "persistentVolumeClaim": {"claimName": "workspace-pvc"},
+                        }
+                    ],
                 }
-            }
-        }
+            },
+        },
     }
 
     try:
         resp = req.post(
             f"{api_url}/apis/batch/v1/namespaces/{namespace}/jobs",
-            headers=headers, json=job_manifest, verify=False, timeout=10
+            headers=headers,
+            json=job_manifest,
+            verify=False,
+            timeout=10,
         )
         resp.raise_for_status()
         logger.info(f"K8s pytest Job created: {job_name}")
@@ -169,10 +183,12 @@ def _run_tests_kubernetes(workspace: str) -> dict:
 
             job_resp = req.get(
                 f"{api_url}/apis/batch/v1/namespaces/{namespace}/jobs/{job_name}",
-                headers=headers, verify=False, timeout=10
+                headers=headers,
+                verify=False,
+                timeout=10,
             )
             job_data = job_resp.json()
-            status   = job_data.get("status", {})
+            status = job_data.get("status", {})
 
             if status.get("succeeded", 0) > 0 or status.get("failed", 0) > 0:
                 break
@@ -182,7 +198,8 @@ def _run_tests_kubernetes(workspace: str) -> dict:
                     f"{api_url}/api/v1/namespaces/{namespace}/pods",
                     headers=headers,
                     params={"labelSelector": f"job-name={job_name}"},
-                    verify=False, timeout=10
+                    verify=False,
+                    timeout=10,
                 )
                 items = pods_resp.json().get("items", [])
                 if items:
@@ -192,7 +209,9 @@ def _run_tests_kubernetes(workspace: str) -> dict:
         if pod_name:
             log_resp = req.get(
                 f"{api_url}/api/v1/namespaces/{namespace}/pods/{pod_name}/log",
-                headers=headers, verify=False, timeout=10
+                headers=headers,
+                verify=False,
+                timeout=10,
             )
             logs = log_resp.text
 
@@ -200,7 +219,8 @@ def _run_tests_kubernetes(workspace: str) -> dict:
             f"{api_url}/apis/batch/v1/namespaces/{namespace}/jobs/{job_name}",
             headers=headers,
             params={"propagationPolicy": "Foreground"},
-            verify=False, timeout=10
+            verify=False,
+            timeout=10,
         )
         logger.info(f"K8s pytest Job {job_name} cleaned up")
 
@@ -208,7 +228,15 @@ def _run_tests_kubernetes(workspace: str) -> dict:
 
     except Exception as e:
         logger.error(f"K8s Job execution failed: {e}")
-        return {"status": "error", "message": str(e), "stdout": "", "passed": 0, "failed": 0, "total": 0, "coverage": 0.0}
+        return {
+            "status": "error",
+            "message": str(e),
+            "stdout": "",
+            "passed": 0,
+            "failed": 0,
+            "total": 0,
+            "coverage": 0.0,
+        }
 
 
 def _run_tests_docker(workspace: str) -> dict:
@@ -217,27 +245,36 @@ def _run_tests_docker(workspace: str) -> dict:
     --network none blocks all external traffic.
     No secrets are passed via -e flags.
     """
-    image     = "python:3.11-slim"
+    image = "python:3.11-slim"
     container = f"phantomdev-pytest-{uuid.uuid4().hex[:8]}"
 
     cmd = [
-        "docker", "run",
+        "docker",
+        "run",
         "--rm",
-        "--name", container,
-        "--network", "none",
-        "--memory", "512m",
-        "--cpus", "0.5",
-        "--tmpfs", "/tmp:size=100m",
-        "-v", f"{workspace}:/code",
-        "--workdir", "/code",
+        "--name",
+        container,
+        "--network",
+        "none",
+        "--memory",
+        "512m",
+        "--cpus",
+        "0.5",
+        "--tmpfs",
+        "/tmp:size=100m",
+        "-v",
+        f"{workspace}:/code",
+        "--workdir",
+        "/code",
         image,
-        "sh", "-c",
+        "sh",
+        "-c",
         (
             "pip install pytest pytest-cov --quiet 2>/dev/null && "
             "python -m pytest /code --tb=short "
             "--cov=/code --cov-report=json "
             "--cov-report=term-missing -q --no-header 2>&1 || true"
-        )
+        ),
     ]
 
     try:
@@ -253,10 +290,26 @@ def _run_tests_docker(workspace: str) -> dict:
 
     except subprocess.TimeoutExpired:
         subprocess.run(["docker", "rm", "-f", container], capture_output=True)
-        return {"status": "timeout", "message": f"Tests timed out after {SANDBOX_TIMEOUT}s", "stdout": "", "passed": 0, "failed": 0, "total": 0, "coverage": 0.0}
+        return {
+            "status": "timeout",
+            "message": f"Tests timed out after {SANDBOX_TIMEOUT}s",
+            "stdout": "",
+            "passed": 0,
+            "failed": 0,
+            "total": 0,
+            "coverage": 0.0,
+        }
     except Exception as e:
         logger.error(f"Docker execution failed: {e}")
-        return {"status": "error", "message": str(e), "stdout": "", "passed": 0, "failed": 0, "total": 0, "coverage": 0.0}
+        return {
+            "status": "error",
+            "message": str(e),
+            "stdout": "",
+            "passed": 0,
+            "failed": 0,
+            "total": 0,
+            "coverage": 0.0,
+        }
 
 
 def _run_tests_direct(workspace: str) -> dict:
@@ -272,19 +325,31 @@ def _run_tests_direct(workspace: str) -> dict:
 
     py_files = list(Path(workspace).rglob("test_*.py"))
     if not py_files:
-        return {"status": "no_tests", "message": "No test files found", "passed": 0, "failed": 0, "total": 0, "coverage": 0.0}
+        return {
+            "status": "no_tests",
+            "message": "No test files found",
+            "passed": 0,
+            "failed": 0,
+            "total": 0,
+            "coverage": 0.0,
+        }
 
     try:
         result = subprocess.run(
             [
-                "python", "-m", "pytest", workspace,
+                "python",
+                "-m",
+                "pytest",
+                workspace,
                 "--tb=short",
                 f"--cov={workspace}",
                 "--cov-report=json",
                 "--cov-report=term-missing",
-                "-q", "--no-header",
+                "-q",
+                "--no-header",
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
             timeout=SANDBOX_TIMEOUT,
             cwd=workspace,
         )
@@ -292,9 +357,23 @@ def _run_tests_direct(workspace: str) -> dict:
         return _parse_pytest_output(output, workspace)
 
     except subprocess.TimeoutExpired:
-        return {"status": "timeout", "message": "Tests timed out", "passed": 0, "failed": 0, "total": 0, "coverage": 0.0}
+        return {
+            "status": "timeout",
+            "message": "Tests timed out",
+            "passed": 0,
+            "failed": 0,
+            "total": 0,
+            "coverage": 0.0,
+        }
     except Exception as e:
-        return {"status": "error", "message": str(e), "passed": 0, "failed": 0, "total": 0, "coverage": 0.0}
+        return {
+            "status": "error",
+            "message": str(e),
+            "passed": 0,
+            "failed": 0,
+            "total": 0,
+            "coverage": 0.0,
+        }
 
 
 def _parse_pytest_output(output: str, workspace: str) -> dict:
@@ -315,7 +394,7 @@ def _parse_pytest_output(output: str, workspace: str) -> dict:
     coverage_file = Path(workspace) / "coverage.json"
     if coverage_file.exists():
         try:
-            cov_data     = json.loads(coverage_file.read_text())
+            cov_data = json.loads(coverage_file.read_text())
             coverage_pct = cov_data.get("totals", {}).get("percent_covered", 0.0)
         except Exception:
             pass
@@ -325,7 +404,9 @@ def _parse_pytest_output(output: str, workspace: str) -> dict:
         if cov_match:
             coverage_pct = float(cov_match.group(1))
 
-    status = "pass" if failed == 0 and coverage_pct >= MIN_COVERAGE and total > 0 else "fail"
+    status = (
+        "pass" if failed == 0 and coverage_pct >= MIN_COVERAGE and total > 0 else "fail"
+    )
     if total == 0:
         status = "no_tests"
 
@@ -346,14 +427,33 @@ def run_tests() -> str:
     Returns a JSON string with the results.
     """
     from agents.base_agent import WORKSPACE
+
     workspace = str(WORKSPACE)
 
     if not Path(workspace).exists():
-        return json.dumps({"status": "no_workspace", "message": "Workspace not found", "coverage": 0, "passed": 0, "failed": 0, "total": 0})
+        return json.dumps(
+            {
+                "status": "no_workspace",
+                "message": "Workspace not found",
+                "coverage": 0,
+                "passed": 0,
+                "failed": 0,
+                "total": 0,
+            }
+        )
 
     py_files = list(Path(workspace).rglob("test_*.py"))
     if not py_files:
-        return json.dumps({"status": "no_tests", "message": "No test files found in workspace", "coverage": 0, "passed": 0, "failed": 0, "total": 0})
+        return json.dumps(
+            {
+                "status": "no_tests",
+                "message": "No test files found in workspace",
+                "coverage": 0,
+                "passed": 0,
+                "failed": 0,
+                "total": 0,
+            }
+        )
 
     mode = _get_execution_mode()
     logger.info(f"QA Agent using execution mode: {mode}")
@@ -377,10 +477,12 @@ def build_qa_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
         state=state,
     )
 
-    agent.register_function(function_map={
-        "run_tests": lambda: _run_and_persist(state),
-        "list_files": list_workspace_files,
-    })
+    agent.register_function(
+        function_map={
+            "run_tests": lambda: _run_and_persist(state),
+            "list_files": list_workspace_files,
+        }
+    )
 
     return agent
 
@@ -388,28 +490,29 @@ def build_qa_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
 def _run_and_persist(state: TaskState) -> str:
     """Run tests and write results back into TaskState."""
     result_str = run_tests()
-    result     = json.loads(result_str)
+    result = json.loads(result_str)
 
-    state.test_results   = result
+    state.test_results = result
     state.coverage_report = result.get("stdout", "")
 
     total = result.get("total", 0)
-    state.metrics.test_pass_rate = (
-        result["passed"] / total if total > 0 else 0.0
-    )
+    state.metrics.test_pass_rate = result["passed"] / total if total > 0 else 0.0
     state.metrics.coverage_pct = result.get("coverage", 0.0)
 
-    mode   = result.get("execution_mode", "direct")
+    mode = result.get("execution_mode", "direct")
     status = result.get("status", "fail")
 
-    mode_label = {"kubernetes": "🔒 K8s Job", "docker": "🐳 Docker", "direct": "⚠️ Direct"}.get(mode, mode)
+    mode_label = {
+        "kubernetes": "🔒 K8s Job",
+        "docker": "🐳 Docker",
+        "direct": "⚠️ Direct",
+    }.get(mode, mode)
 
     if status == "pass":
         state.set_status(TaskStatus.SECURING)
         state.add_message(
             "QAAgent",
-            f"✅ Tests passed | Coverage: {result['coverage']}% | "
-            f"Mode: {mode_label}"
+            f"✅ Tests passed | Coverage: {result['coverage']}% | Mode: {mode_label}",
         )
     elif status == "no_tests":
         state.add_message("QAAgent", f"⚠️ No test files found | Mode: {mode_label}")
@@ -419,7 +522,7 @@ def _run_and_persist(state: TaskState) -> str:
             f"❌ Tests: {result.get('passed', 0)} passed, "
             f"{result.get('failed', 0)} failed | "
             f"Coverage: {result.get('coverage', 0)}% | "
-            f"Mode: {mode_label}"
+            f"Mode: {mode_label}",
         )
 
     return result_str
