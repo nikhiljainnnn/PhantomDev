@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 /* ── Environment detection ───────────────────────────────────────────────── */
 const isProduction = window.location.port === "" || window.location.port === "80";
 const API      = isProduction ? "" : "http://localhost:8000";
-const WS_BASE  = isProduction ? `ws://${window.location.host}` : "ws://localhost:8000";
+const WS_BASE  = isProduction ? `wss://${window.location.host}` : "ws://localhost:8000";
 
 /* ── Design tokens (Stitch PhantomDev system) ───────────────────────────── */
 const C = {
