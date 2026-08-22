@@ -341,7 +341,7 @@ function TaskCreationForm({ onCreated }) {
     if (!form.title.trim()) { setError("Title is required"); return; }
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${API}/tasks`, {
+      const res = await apiFetch(`${API}/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -384,7 +384,7 @@ function TaskCreationForm({ onCreated }) {
     }
     setFetching(true); setError("");
     try {
-      const res = await fetch(`${API}/github/issue?repo=${form.repo}&issue_number=${form.issue_number}`);
+      const res = await apiFetch(`${API}/github/issue?repo=${form.repo}&issue_number=${form.issue_number}`);
       if (!res.ok) {
         const d = await res.json();
         throw new Error(d.detail || `Error ${res.status}`);
@@ -521,7 +521,15 @@ function LiveDot({ connected }) {
 /* ══════════════════════════════════════════════════════════════════════════
    MAIN APP
 ══════════════════════════════════════════════════════════════════════════ */
+function apiFetch(url, options = {}) {
+  const key = localStorage.getItem("phantomdev_api_key");
+  const headers = { ...options.headers };
+  if (key) headers["X-API-Key"] = key;
+  return fetch(url, { ...options, headers });
+}
+
 export default function App() {
+  const [apiKey, setApiKey]             = useState(localStorage.getItem("phantomdev_api_key") || "");
   const [tasks, setTasks]               = useState([]);
   const [selectedId, setSelectedId]     = useState(null);
   const [taskDetail, setTaskDetail]     = useState(null);
@@ -557,7 +565,7 @@ export default function App() {
   /* ── Fetch task list (polling every 3s) ───────────────────────────────── */
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/tasks`);
+      const res = await apiFetch(`${API}/tasks`);
       if (!res.ok) return;
       const data = await res.json();
       setTasks(data);
@@ -574,7 +582,7 @@ export default function App() {
   const fetchDetail = useCallback(async (id) => {
     if (!id) return;
     try {
-      const res = await fetch(`${API}/tasks/${id}`);
+      const res = await apiFetch(`${API}/tasks/${id}`);
       if (!res.ok) return;
       const data = await res.json();
       setTaskDetail(data);
@@ -671,7 +679,7 @@ export default function App() {
     if (!selectedId || approving) return;
     setApproving(true);
     try {
-      const res = await fetch(`${API}/tasks/${selectedId}/approve`, { method: "POST" });
+      const res = await apiFetch(`${API}/tasks/${selectedId}/approve`, { method: "POST" });
       if (res.ok) { notify("✅ PR Approved!", C.emerald); fetchDetail(selectedId); }
       else notify("Failed to approve", C.red);
     } finally { setApproving(false); }
@@ -680,7 +688,7 @@ export default function App() {
   const handleReject = async () => {
     if (!selectedId) return;
     try {
-      const res = await fetch(`${API}/tasks/${selectedId}/reject`, { method: "POST" });
+      const res = await apiFetch(`${API}/tasks/${selectedId}/reject`, { method: "POST" });
       if (res.ok) { notify("❌ Task Rejected", C.red); fetchDetail(selectedId); }
     } catch {}
   };
@@ -688,7 +696,7 @@ export default function App() {
   const handleDelete = async () => {
     if (!selectedId || !confirm("Delete this task?")) return;
     try {
-      await fetch(`${API}/tasks/${selectedId}`, { method: "DELETE" });
+      await apiFetch(`${API}/tasks/${selectedId}`, { method: "DELETE" });
       notify("🗑 Task deleted", C.gray);
       setSelectedId(null);
       setTaskDetail(null);
@@ -875,10 +883,33 @@ export default function App() {
               />
             ))
           )}
+          <div style={{ marginTop: 16, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+            <label style={{ fontSize: 11, color: C.textDim, display: "block", marginBottom: 4 }}>API Key (if required)</label>
+            <input 
+              type="password"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                if (e.target.value) localStorage.setItem("phantomdev_api_key", e.target.value);
+                else localStorage.removeItem("phantomdev_api_key");
+              }}
+              placeholder="Enter PHANTOMDEV_API_KEY..."
+              style={{
+                width: "100%",
+                background: C.surfaceMid,
+                border: `1px solid ${C.border}`,
+                borderRadius: 6,
+                padding: "6px 10px",
+                color: C.text,
+                fontSize: 12,
+              }}
+            />
+          </div>
         </div>
 
         {/* Footer */}
         <div style={{
+
           padding: "12px 16px",
           borderTop: `1px solid ${C.border}`,
           flexShrink: 0,
