@@ -72,10 +72,12 @@ def get_llm_config() -> dict:
                     "model": groq_model,
                     "api_key": groq_key,
                     "base_url": "https://api.groq.com/openai/v1",
+                    "max_retries": 10,
                 }
             ],
             "temperature": 0.1,
-            "timeout": 60,
+            "timeout": 120,
+            "max_retries": 10,
             "cache_seed": None,
         }
 
