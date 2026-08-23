@@ -64,11 +64,12 @@ def get_llm_config() -> dict:
     ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
 
     if groq_key:
-        logger.info("Using Groq: llama-3.3-70b-versatile")
+        groq_model = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+        logger.info(f"Using Groq: {groq_model}")
         return {
             "config_list": [
                 {
-                    "model": "llama-3.3-70b-versatile",
+                    "model": groq_model,
                     "api_key": groq_key,
                     "base_url": "https://api.groq.com/openai/v1",
                 }
