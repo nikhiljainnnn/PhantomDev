@@ -57,11 +57,28 @@ STATE_DIR = Path(os.getenv("WORKSPACE_DIR", "./workspace")) / ".state"
 
 
 def get_llm_config() -> dict:
-    # Priority order: Groq → OpenAI → Ollama (local)
+    # Priority order: Anthropic → Groq → OpenAI → Ollama (local)
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     groq_key = os.getenv("GROQ_API_KEY", "")
     openai_key = os.getenv("OPENAI_API_KEY", "")
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+
+    if anthropic_key:
+        anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
+        logger.info(f"Using Anthropic: {anthropic_model}")
+        return {
+            "config_list": [
+                {
+                    "model": anthropic_model,
+                    "api_key": anthropic_key,
+                    "api_type": "anthropic",
+                }
+            ],
+            "temperature": 0.1,
+            "timeout": 120,
+            "cache_seed": None,
+        }
 
     if groq_key:
         # Groq recently decommissioned all LLaMA 3 models. Use the new standard.

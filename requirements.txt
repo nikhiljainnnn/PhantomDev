@@ -9,6 +9,7 @@ python-multipart==0.0.12
 # ── AutoGen ───────────────────────────────────────────────────────────────────
 pyautogen==0.2.35
 openai==1.51.0
+anthropic==0.35.0
 
 # ── Redis + Celery (production task queue + persistence) ──────────────────────
 redis==5.0.8
