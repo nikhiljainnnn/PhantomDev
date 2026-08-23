@@ -132,6 +132,13 @@ class TaskState(BaseModel):
     def fail(self, error: str) -> None:
         self.errors.append(error)
         self.status = TaskStatus.FAILED
+        self.agent_messages.append(
+            {
+                "agent": "System",
+                "content": f"Pipeline failed: {error}",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
         self.updated_at = datetime.utcnow().isoformat()
 
     @property
