@@ -322,7 +322,20 @@ class PhantomDevOrchestrator:
         orchestrator = self
 
         def wrapped(messages=None, sender=None, **kwargs):
+            # Normalize Anthropic content blocks in the INCOMING chat history.
+            # Without this, AutoGen crashes internally when building the next LLM
+            # request from a history that contains list-of-dict content blocks.
+            if messages:
+                normalized = []
+                for m in messages:
+                    content = m.get("content")
+                    if isinstance(content, (list, dict)):
+                        m = {**m, "content": _extract_text(content)}
+                    normalized.append(m)
+                messages = normalized
+
             reply = original(messages=messages, sender=sender, **kwargs)
+
             if reply is not None:
                 reply_text = _extract_text(reply) if not isinstance(reply, str) else reply
                 if reply_text.strip():
@@ -330,8 +343,8 @@ class PhantomDevOrchestrator:
                     if last.get("content") != reply_text or last.get("agent") != agent.name:
                         state.add_message(agent.name, reply_text[:3000])
                     orchestrator._fire_update(state)
-                # Always return the normalized string so downstream regex works
-                return reply_text if not isinstance(reply, str) else reply
+                # Return normalized string so downstream regex in agent parsers works
+                return reply_text
             return reply
 
         agent.generate_reply = wrapped
