@@ -65,7 +65,7 @@ def get_llm_config() -> dict:
     ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
 
     if anthropic_key:
-        anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
+        anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
         logger.info(f"Using Anthropic: {anthropic_model}")
         return {
             "config_list": [
