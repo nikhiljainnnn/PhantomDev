@@ -131,7 +131,7 @@ class PhantomBaseAgent(autogen.AssistantAgent):
             system_message=system_message,
             llm_config=llm_config,
             human_input_mode="NEVER",
-            max_consecutive_auto_reply=10,
+            max_consecutive_auto_reply=30,
             **kwargs,
         )
         self.state = state

@@ -170,10 +170,14 @@ AGENT_ORDER = [
 
 def custom_speaker_selection(last_speaker, groupchat):
     agents_by_name = {a.name: a for a in groupchat.agents}
-    idx = (
-        AGENT_ORDER.index(last_speaker.name) if last_speaker.name in AGENT_ORDER else -1
-    )
-    next_name = AGENT_ORDER[min(idx + 1, len(AGENT_ORDER) - 1)]
+    if last_speaker.name not in AGENT_ORDER:
+        # HumanProxy or unknown — start from the beginning
+        return agents_by_name.get("PMAgent", groupchat.agents[0])
+    idx = AGENT_ORDER.index(last_speaker.name)
+    if idx >= len(AGENT_ORDER) - 1:
+        # PRAgent already spoke — keep it as last speaker, GroupChat will terminate
+        return agents_by_name.get("PRAgent", groupchat.agents[-1])
+    next_name = AGENT_ORDER[idx + 1]
     return agents_by_name.get(next_name, groupchat.agents[0])
 
 
@@ -277,9 +281,9 @@ class PhantomDevOrchestrator:
             groupchat = GroupChat(
                 agents=[user_proxy] + all_agents,
                 messages=[],
-                max_round=int(os.getenv("MAX_ROUNDS", 40)),
+                max_round=int(os.getenv("MAX_ROUNDS", 80)),
                 speaker_selection_method=custom_speaker_selection,
-                allow_repeat_speaker=False,
+                allow_repeat_speaker=True,
             )
 
             manager = GroupChatManager(
@@ -328,6 +332,7 @@ class PhantomDevOrchestrator:
         """Intercept every agent reply, add it to the message log, and persist state."""
         original = agent.generate_reply
         orchestrator = self
+        agent_name = agent.name
 
         def wrapped(messages=None, sender=None, **kwargs):
             # Normalize Anthropic content blocks in the INCOMING chat history.
@@ -342,7 +347,17 @@ class PhantomDevOrchestrator:
                     normalized.append(m)
                 messages = normalized
 
-            reply = original(messages=messages, sender=sender, **kwargs)
+            try:
+                reply = original(messages=messages, sender=sender, **kwargs)
+            except Exception as exc:
+                # An agent crash must NOT kill the whole pipeline.
+                # Log it, record it in state, and return a neutral string so
+                # the GroupChat can continue to the next agent.
+                err_msg = f"⚠️ {agent_name} encountered an error: {exc}"
+                logger.exception(f"{agent_name} generate_reply raised: {exc}")
+                state.add_message(agent_name, err_msg)
+                orchestrator._fire_update(state)
+                return err_msg
 
             if reply is not None:
                 reply_text = (
@@ -352,9 +367,9 @@ class PhantomDevOrchestrator:
                     last = state.agent_messages[-1] if state.agent_messages else {}
                     if (
                         last.get("content") != reply_text
-                        or last.get("agent") != agent.name
+                        or last.get("agent") != agent_name
                     ):
-                        state.add_message(agent.name, reply_text[:3000])
+                        state.add_message(agent_name, reply_text[:3000])
                     orchestrator._fire_update(state)
                 # Return normalized string so downstream regex in agent parsers works
                 return reply_text
