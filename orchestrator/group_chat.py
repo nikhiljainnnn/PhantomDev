@@ -64,7 +64,7 @@ def get_llm_config() -> dict:
     ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
 
     if groq_key:
-        groq_model = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+        groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
         logger.info(f"Using Groq: {groq_model}")
         return {
             "config_list": [
