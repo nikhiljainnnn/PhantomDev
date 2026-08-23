@@ -64,7 +64,8 @@ def get_llm_config() -> dict:
     ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
 
     if groq_key:
-        groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        # Groq recently decommissioned all LLaMA 3 models. Use the new standard.
+        groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
         logger.info(f"Using Groq: {groq_model}")
         return {
             "config_list": [
