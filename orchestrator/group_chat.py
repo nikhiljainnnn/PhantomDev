@@ -128,8 +128,21 @@ def get_llm_config() -> dict:
     }
 
 
+def _extract_text(content) -> str:
+    """Normalize Anthropic list-of-blocks or plain string content to a single str."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        # Anthropic returns [{"type": "text", "text": "..."}, ...]
+        parts = [block.get("text", "") if isinstance(block, dict) else str(block) for block in content]
+        return "\n".join(parts)
+    if content is None:
+        return ""
+    return str(content)
+
+
 def is_termination_msg(msg: dict) -> bool:
-    content = msg.get("content", "") or ""
+    content = _extract_text(msg.get("content", ""))
     return any(
         m in content
         for m in ["PHANTOMDEV_COMPLETE", "PHANTOMDEV_FAILED", "HUMAN_APPROVAL_REQUIRED"]
@@ -286,7 +299,7 @@ class PhantomDevOrchestrator:
             )
 
             last_msgs = groupchat.messages[-5:] if groupchat.messages else []
-            combined = " ".join(m.get("content", "") for m in last_msgs)
+            combined = " ".join(_extract_text(m.get("content", "")) for m in last_msgs)
 
             if "PHANTOMDEV_FAILED" in combined:
                 state.fail("Agent pipeline reported failure")
@@ -310,11 +323,15 @@ class PhantomDevOrchestrator:
 
         def wrapped(messages=None, sender=None, **kwargs):
             reply = original(messages=messages, sender=sender, **kwargs)
-            if reply and isinstance(reply, str) and reply.strip():
-                last = state.agent_messages[-1] if state.agent_messages else {}
-                if last.get("content") != reply or last.get("agent") != agent.name:
-                    state.add_message(agent.name, reply[:3000])
-                orchestrator._fire_update(state)
+            if reply is not None:
+                reply_text = _extract_text(reply) if not isinstance(reply, str) else reply
+                if reply_text.strip():
+                    last = state.agent_messages[-1] if state.agent_messages else {}
+                    if last.get("content") != reply_text or last.get("agent") != agent.name:
+                        state.add_message(agent.name, reply_text[:3000])
+                    orchestrator._fire_update(state)
+                # Always return the normalized string so downstream regex works
+                return reply_text if not isinstance(reply, str) else reply
             return reply
 
         agent.generate_reply = wrapped

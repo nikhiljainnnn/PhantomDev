@@ -78,7 +78,12 @@ def build_pm_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
     def generate_with_persistence(messages=None, sender=None, **kwargs):
         reply = original_generate(messages=messages, sender=sender, **kwargs)
         if reply:
-            _parse_and_persist(reply, state)
+            # Normalize Anthropic list-of-content-blocks to plain string
+            text = reply if isinstance(reply, str) else (
+                "\n".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in reply)
+                if isinstance(reply, list) else str(reply)
+            )
+            _parse_and_persist(text, state)
         return reply
 
     agent.generate_reply = generate_with_persistence
