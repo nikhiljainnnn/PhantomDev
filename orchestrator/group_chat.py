@@ -134,7 +134,10 @@ def _extract_text(content) -> str:
         return content
     if isinstance(content, list):
         # Anthropic returns [{"type": "text", "text": "..."}, ...]
-        parts = [block.get("text", "") if isinstance(block, dict) else str(block) for block in content]
+        parts = [
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        ]
         return "\n".join(parts)
     if content is None:
         return ""
@@ -337,10 +340,15 @@ class PhantomDevOrchestrator:
             reply = original(messages=messages, sender=sender, **kwargs)
 
             if reply is not None:
-                reply_text = _extract_text(reply) if not isinstance(reply, str) else reply
+                reply_text = (
+                    _extract_text(reply) if not isinstance(reply, str) else reply
+                )
                 if reply_text.strip():
                     last = state.agent_messages[-1] if state.agent_messages else {}
-                    if last.get("content") != reply_text or last.get("agent") != agent.name:
+                    if (
+                        last.get("content") != reply_text
+                        or last.get("agent") != agent.name
+                    ):
                         state.add_message(agent.name, reply_text[:3000])
                     orchestrator._fire_update(state)
                 # Return normalized string so downstream regex in agent parsers works
