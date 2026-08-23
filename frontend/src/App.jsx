@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL || "",
-  import.meta.env.VITE_SUPABASE_ANON_KEY || ""
-);
+/* ── API config ───────────────────────────────────────────────────────────── */
+const API = window.location.port === "3000" ? "http://localhost:8000" : "";
+const WS  = window.location.port === "3000" ? "ws://localhost:8000" : `wss://${window.location.host}`;
+
+function apiFetch(path, options = {}) {
+  const key = localStorage.getItem("phantomdev_api_key");
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (key) headers["X-API-Key"] = key;
+  return fetch(`${API}${path}`, { ...options, headers });
+}
 
 const stages = ["PM", "Architect", "Engineers", "QA", "Security", "Writer", "PR"];
 const stageFor = { planning: 0, architecting: 1, coding: 2, testing: 3, securing: 4, documenting: 5, pr_open: 6, approved: 6 };
@@ -58,14 +63,11 @@ function useGitHubIssue() {
     setFetchHint("Fetching from GitHub...");
     setFetchError(false);
     try {
-      const { data, error } = await supabase.functions.invoke("github-issue", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        query: { repo: repo.trim(), issue_number: String(issueNumber) },
-      });
-      if (error) throw new Error(error.message || "Failed to fetch issue");
+      const res = await apiFetch(`/github/issue?repo=${encodeURIComponent(repo.trim())}&issue_number=${issueNumber}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || `Error ${res.status}`);
       if (data?.error) throw new Error(data.error);
-      setFetchHint(`Fetched issue #${data.number}: "${data.title}"`);
+      setFetchHint(`Fetched issue #${issueNumber}: "${data.title}"`);
       setFetchError(false);
       return data;
     } catch (err) {
@@ -284,16 +286,19 @@ function NewTask({ onClose, onCreated }) {
     if (!form.title.trim()) { setError("Add a task title first."); return; }
     setLoading(true);
     try {
-      const { data, error: dbError } = await supabase.from("tasks").insert({
-        title: form.title.trim(),
-        body: form.body.trim(),
-        repo: form.repo.trim(),
-        issue_number: Number(form.issue_number) || null,
-        base_branch: form.base_branch || "main",
-        status: "pending",
-      }).select().single();
-      if (dbError) throw dbError;
-      onCreated(data.id);
+      const res = await apiFetch("/tasks", {
+        method: "POST",
+        body: JSON.stringify({
+          title: form.title.trim(),
+          body: form.body.trim(),
+          repo: form.repo.trim(),
+          issue_number: Number(form.issue_number) || 0,
+          base_branch: form.base_branch || "main",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || `Error ${res.status}`);
+      onCreated(data.task_id);
     } catch (err) {
       setError(err.message || "Could not create task.");
     } finally {
@@ -355,14 +360,25 @@ export default function App() {
   const [modal, setModal] = useState(false);
 
   const refresh = useCallback(async () => {
-    const { data } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
-    if (data) setTasks(data);
+    try {
+      const res = await apiFetch("/tasks");
+      if (res.ok) {
+        const data = await res.json();
+        // FastAPI returns an array; map task_id -> id for compatibility
+        setTasks(data.map(t => ({ ...t, id: t.task_id })));
+      }
+    } catch {/* silent */}
   }, []);
 
   const loadDetail = useCallback(async (id) => {
     if (!id) return;
-    const { data } = await supabase.from("tasks").select("*").eq("id", id).single();
-    if (data) setDetail(data);
+    try {
+      const res = await apiFetch(`/tasks/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDetail({ ...data, id: data.task_id, messages: data.agent_messages || [] });
+      }
+    } catch {/* silent */}
   }, []);
 
   useEffect(() => {
@@ -374,13 +390,15 @@ export default function App() {
   useEffect(() => {
     if (!selected) return;
     loadDetail(selected);
+    const timer = setInterval(() => loadDetail(selected), 3000);
+    return () => clearInterval(timer);
   }, [selected, loadDetail]);
 
   const select = (id) => { setSelected(id); setView("task"); };
   const create = (id) => { setModal(false); setSelected(id); setView("task"); refresh(); };
   const remove = async () => {
     if (!selected || !window.confirm("Delete this task?")) return;
-    await supabase.from("tasks").delete().eq("id", selected);
+    await apiFetch(`/tasks/${selected}`, { method: "DELETE" });
     setSelected(null); setDetail(null); setView("overview"); refresh();
   };
 
