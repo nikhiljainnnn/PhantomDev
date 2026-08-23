@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import re
 
-from agents.base_agent import PhantomBaseAgent
+from agents.base_agent import PhantomBaseAgent, normalize_content
 from orchestrator.state import TaskState, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -62,8 +62,10 @@ def build_architect_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgen
 
     def generate_with_persistence(messages=None, sender=None, **kwargs):
         reply = original_generate(messages=messages, sender=sender, **kwargs)
-        if reply and isinstance(reply, str):
-            _parse_and_persist(reply, state)
+        if reply:
+            text = normalize_content(reply)
+            if text.strip():
+                _parse_and_persist(text, state)
         return reply
 
     agent.generate_reply = generate_with_persistence

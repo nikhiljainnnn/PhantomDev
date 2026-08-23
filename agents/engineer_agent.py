@@ -16,6 +16,22 @@ from orchestrator.state import TaskState, TaskStatus
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_text_local(content) -> str:
+    """Normalize any AutoGen/Anthropic content shape to a plain string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        inner = content.get("content") or content.get("text", "")
+        return _extract_text_local(inner)
+    if isinstance(content, list):
+        parts = [_extract_text_local(block) for block in content]
+        return "\n".join(p for p in parts if p)
+    if content is None:
+        return ""
+    return str(content)
+
+
 ENGINEER_SYSTEM_PROMPT = """
 You are EngineerAgent_{idx} in PhantomDev, an autonomous software engineering team.
 
@@ -111,11 +127,18 @@ def build_engineer_agents(
 
         original_generate = agent.generate_reply
 
-        def make_reply_fn(ag, _idx=idx):
+        def make_reply_fn(ag, _idx=idx, _orig=original_generate):
             def generate_with_persistence(messages=None, sender=None, **kwargs):
-                reply = original_generate(messages=messages, sender=sender, **kwargs)
-                if reply and isinstance(reply, str):
-                    _parse_and_persist(reply, state, _idx)
+                reply = _orig(messages=messages, sender=sender, **kwargs)
+                if reply:
+                    # Normalize Anthropic dict/list content to plain string
+                    text = (
+                        reply
+                        if isinstance(reply, str)
+                        else (_extract_text_local(reply))
+                    )
+                    if text.strip():
+                        _parse_and_persist(text, state, _idx)
                 return reply
 
             return generate_with_persistence

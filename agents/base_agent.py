@@ -26,6 +26,28 @@ CHROMA_DIR = Path(os.getenv("CHROMA_PERSIST_DIR", "./data/chroma"))
 EMBED_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
 
+def normalize_content(content) -> str:
+    """Normalize any AutoGen/Anthropic content shape to a plain string.
+
+    Handles:
+      - str: returned as-is
+      - dict: extracts 'content' or 'text' key, recursively normalized
+      - list: Anthropic list-of-blocks → joined text
+      - None: empty string
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        inner = content.get("content") or content.get("text", "")
+        return normalize_content(inner)
+    if isinstance(content, list):
+        parts = [normalize_content(block) for block in content]
+        return "\n".join(p for p in parts if p)
+    if content is None:
+        return ""
+    return str(content)
+
+
 def get_chroma_collection(collection_name: str = "codebase") -> Any:
     """Return (or create) the shared ChromaDB collection."""
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))

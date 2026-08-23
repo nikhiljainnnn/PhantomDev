@@ -74,7 +74,8 @@ def run_bandit() -> str:
             ["python", "-m", "bandit", "-r", workspace, "-f", "json", "-q"],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=30,
+            check=False,
         )
 
         raw = result.stdout.strip()
@@ -141,7 +142,8 @@ def run_safety() -> str:
             ["python", "-m", "safety", "check", "--json", "-r", req_files[0]],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=30,
+            check=False,
         )
 
         raw = result.stdout.strip() or "[]"

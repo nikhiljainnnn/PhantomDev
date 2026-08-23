@@ -283,13 +283,14 @@ def _run_tests_docker(workspace: str) -> dict:
             capture_output=True,
             text=True,
             timeout=SANDBOX_TIMEOUT,
+            check=False,
         )
         output = result.stdout + result.stderr
         logger.info(f"Docker pytest completed (exit={result.returncode})")
         return _parse_pytest_output(output, workspace)
 
     except subprocess.TimeoutExpired:
-        subprocess.run(["docker", "rm", "-f", container], capture_output=True)
+        subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
         return {
             "status": "timeout",
             "message": f"Tests timed out after {SANDBOX_TIMEOUT}s",
@@ -352,6 +353,7 @@ def _run_tests_direct(workspace: str) -> dict:
             text=True,
             timeout=SANDBOX_TIMEOUT,
             cwd=workspace,
+            check=False,
         )
         output = (result.stdout or "") + (result.stderr or "")
         return _parse_pytest_output(output, workspace)

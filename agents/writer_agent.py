@@ -12,6 +12,7 @@ import logging
 from agents.base_agent import (
     PhantomBaseAgent,
     list_workspace_files,
+    normalize_content,
     read_workspace_file,
 )
 from orchestrator.state import TaskState
@@ -72,10 +73,11 @@ def build_writer_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
 
     def generate_with_persist(messages=None, sender=None, **kwargs):
         reply = original_generate(messages=messages, sender=sender, **kwargs)
-        if reply and isinstance(reply, str):
+        if reply:
             import re
 
-            match = re.search(r"```markdown\s*(.*?)\s*```", reply, re.DOTALL)
+            text = normalize_content(reply)
+            match = re.search(r"```markdown\s*(.*?)\s*```", text, re.DOTALL)
             if match:
                 state.documentation = match.group(1).strip()
                 state.pr_body = state.documentation

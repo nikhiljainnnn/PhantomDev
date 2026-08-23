@@ -12,7 +12,7 @@ import json
 import logging
 import re
 
-from agents.base_agent import PhantomBaseAgent
+from agents.base_agent import PhantomBaseAgent, normalize_content
 from orchestrator.state import SubTask, TaskState, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -78,20 +78,9 @@ def build_pm_agent(llm_config: dict, state: TaskState) -> PhantomBaseAgent:
     def generate_with_persistence(messages=None, sender=None, **kwargs):
         reply = original_generate(messages=messages, sender=sender, **kwargs)
         if reply:
-            # Normalize Anthropic list-of-content-blocks to plain string
-            text = (
-                reply
-                if isinstance(reply, str)
-                else (
-                    "\n".join(
-                        b.get("text", "") if isinstance(b, dict) else str(b)
-                        for b in reply
-                    )
-                    if isinstance(reply, list)
-                    else str(reply)
-                )
-            )
-            _parse_and_persist(text, state)
+            text = normalize_content(reply)
+            if text.strip():
+                _parse_and_persist(text, state)
         return reply
 
     agent.generate_reply = generate_with_persistence
