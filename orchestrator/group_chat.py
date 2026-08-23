@@ -129,16 +129,18 @@ def get_llm_config() -> dict:
 
 
 def _extract_text(content) -> str:
-    """Normalize Anthropic list-of-blocks or plain string content to a single str."""
+    """Normalize any AutoGen/Anthropic content shape to a plain string."""
     if isinstance(content, str):
         return content
+    if isinstance(content, dict):
+        # AutoGen message dict: {"content": "...", "role": "assistant", ...}
+        # or Anthropic content block: {"type": "text", "text": "..."}
+        inner = content.get("content") or content.get("text", "")
+        return _extract_text(inner)
     if isinstance(content, list):
-        # Anthropic returns [{"type": "text", "text": "..."}, ...]
-        parts = [
-            block.get("text", "") if isinstance(block, dict) else str(block)
-            for block in content
-        ]
-        return "\n".join(parts)
+        # Anthropic list-of-blocks: [{"type": "text", "text": "..."}, ...]
+        parts = [_extract_text(block) for block in content]
+        return "\n".join(p for p in parts if p)
     if content is None:
         return ""
     return str(content)
@@ -304,9 +306,12 @@ class PhantomDevOrchestrator:
             last_msgs = groupchat.messages[-5:] if groupchat.messages else []
             combined = " ".join(_extract_text(m.get("content", "")) for m in last_msgs)
 
+            # Respect status already set by agents (e.g. PRAgent dry-run sets PR_OPEN)
+            already_pr = state.status == TaskStatus.PR_OPEN
+
             if "PHANTOMDEV_FAILED" in combined:
                 state.fail("Agent pipeline reported failure")
-            elif "HUMAN_APPROVAL_REQUIRED" in combined or state.pr_url:
+            elif "HUMAN_APPROVAL_REQUIRED" in combined or state.pr_url or already_pr:
                 state.set_status(TaskStatus.PR_OPEN)
             else:
                 state.fail("Pipeline ended without clear success signal")
