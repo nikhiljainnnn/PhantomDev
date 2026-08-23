@@ -290,7 +290,9 @@ def _run_tests_docker(workspace: str) -> dict:
         return _parse_pytest_output(output, workspace)
 
     except subprocess.TimeoutExpired:
-        subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
+        subprocess.run(
+            ["docker", "rm", "-f", container], capture_output=True, check=False
+        )
         return {
             "status": "timeout",
             "message": f"Tests timed out after {SANDBOX_TIMEOUT}s",
